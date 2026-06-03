@@ -205,8 +205,12 @@ export default function ProjectsView() {
         <div className="space-y-3">
           {projects.map((p) => {
             const history = historyByUrl.get(p.url) ?? [];
-            const desktopLcps = history.filter((r) => r.preset === 'desktop' && typeof r.lcp === 'number').map((r) => r.lcp as number).reverse();
-            const mobileLcps = history.filter((r) => r.preset === 'mobile-mid' && typeof r.lcp === 'number').map((r) => r.lcp as number).reverse();
+            const desktopRuns = history.filter((r) => r.preset === 'desktop' && typeof r.lcp === 'number');
+            const mobileRuns = history.filter((r) => r.preset === 'mobile-mid' && typeof r.lcp === 'number');
+            const desktopLcps = desktopRuns.map((r) => r.lcp as number).reverse();
+            const mobileLcps = mobileRuns.map((r) => r.lcp as number).reverse();
+            const desktopTs = desktopRuns.map((r) => r.started_at);
+            const mobileTs = mobileRuns.map((r) => r.started_at);
             const isExpanded = expanded === p.url;
             const isRunning = runningUrl === p.url;
             return (
@@ -216,8 +220,8 @@ export default function ProjectsView() {
                     <button onClick={() => setExpanded(isExpanded ? null : p.url)} className="font-semibold text-left hover:text-[var(--color-cyan)] transition">{p.url}</button>
                     <div className="text-xs text-[var(--color-dim)] mt-0.5">{p.totalRuns} runs · last {fmtRelative(p.lastRunAt)}</div>
                   </div>
-                  <MetricCell label="desktop LCP p75" value={fmtMs(p.desktopLcpP75)} tier={lcpTier(p.desktopLcpP75)} sparkline={desktopLcps} />
-                  <MetricCell label="mobile LCP p75" value={fmtMs(p.mobileLcpP75)} tier={lcpTier(p.mobileLcpP75)} sparkline={mobileLcps} />
+                  <MetricCell label="desktop LCP p75" value={fmtMs(p.desktopLcpP75)} tier={lcpTier(p.desktopLcpP75)} values={desktopLcps} timestamps={desktopTs} />
+                  <MetricCell label="mobile LCP p75" value={fmtMs(p.mobileLcpP75)} tier={lcpTier(p.mobileLcpP75)} values={mobileLcps} timestamps={mobileTs} />
                   <div className="text-right">
                     <div className="text-xs text-[var(--color-dim)] uppercase tracking-wide">CLS</div>
                     <div className="font-mono text-sm" style={{ color: tierColor[(typeof p.cls === 'number' && p.cls <= 0.1) ? 'good' : (typeof p.cls === 'number' && p.cls <= 0.25) ? 'warn' : (typeof p.cls === 'number' ? 'poor' : 'dim')] }}>
@@ -246,12 +250,48 @@ export default function ProjectsView() {
   );
 }
 
-function MetricCell({ label, value, tier, sparkline }: { label: string; value: string; tier: 'good' | 'warn' | 'poor' | 'dim'; sparkline: number[] }) {
+const MIN_SPARKLINE_SPAN_MS = 12 * 60 * 60 * 1000; // 12h — below this, the line is just measurement noise within a session
+
+function fmtSpan(ms: number): string {
+  if (ms <= 0) return '0m';
+  const min = Math.round(ms / 60000);
+  if (min < 60) return `${min}m`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.round(h / 24)}d`;
+}
+
+function MetricCell({ label, value, tier, values, timestamps }: { label: string; value: string; tier: 'good' | 'warn' | 'poor' | 'dim'; values: number[]; timestamps: number[] }) {
+  const span = timestamps.length > 1 ? Math.max(...timestamps) - Math.min(...timestamps) : 0;
+  const showSparkline = span >= MIN_SPARKLINE_SPAN_MS && values.length > 2;
+  const min = values.length > 0 ? Math.min(...values) : undefined;
+  const max = values.length > 0 ? Math.max(...values) : undefined;
   return (
     <div>
       <div className="text-xs text-[var(--color-dim)] uppercase tracking-wide">{label}</div>
       <div className="font-mono text-sm" style={{ color: tierColor[tier] }}>{value}</div>
-      <div className="mt-1">{sparkline.length > 1 ? <Sparkline values={sparkline} /> : <span className="text-[var(--color-dim)] text-xs">n={sparkline.length}</span>}</div>
+      <div className="mt-1 text-xs text-[var(--color-dim)]">
+        {showSparkline ? (
+          <Sparkline values={values} />
+        ) : values.length === 0 ? (
+          <span>no runs</span>
+        ) : values.length === 1 ? (
+          <span>n=1</span>
+        ) : (
+          <span>
+            n={values.length}
+            {span > 0 ? ` over ${fmtSpan(span)}` : ''}
+            {min !== max && (
+              <>
+                {' · range '}
+                <span className="font-mono">{fmtMs(min)}</span>
+                {'–'}
+                <span className="font-mono">{fmtMs(max)}</span>
+              </>
+            )}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
