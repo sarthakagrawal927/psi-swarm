@@ -1,6 +1,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { URL as NodeURL } from 'node:url';
+import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 import { SwarmRunner, type RunResultWithArtifact, type RunnerEvent } from './runner.js';
 import { HistoryDB } from './db.js';
 import { PRESETS, PRESET_GROUPS, resolvePresets } from './presets.js';
@@ -29,6 +32,67 @@ interface RunRecord {
 
 const runs = new Map<string, RunRecord>();
 const VERSION = '0.2.0';
+
+// Report registry: URL → file paths (newest first), built from any directory
+// where psi-swarm has written --output html files.
+const REPORT_DIRS = [
+  '/tmp/psi-coverage',
+  '/tmp/psi-more',
+  '/tmp/psi-deploy',
+  '/tmp/psi-insights',
+  '/tmp/psi-fast',
+  '/tmp/psi-populate',
+  '/tmp/psi-populate2',
+  join(homedir(), '.psi-swarm', 'reports'),
+];
+const META_URL_RE = /<meta\s+name=["']psi-url["']\s+content=["']([^"']+)["']/i;
+const META_GENERATED_RE = /<meta\s+name=["']psi-generated["']\s+content=["']([^"']+)["']/i;
+const TITLE_URL_RE = /<title>psi-swarm report\s*·\s*([^<]+)<\/title>/i;
+
+interface ReportEntry { path: string; mtime: number; url: string; generatedAt?: string; }
+let reportRegistry: Map<string, ReportEntry[]> | null = null;
+let reportRegistryBuiltAt = 0;
+const REPORT_REGISTRY_TTL_MS = 30_000;
+
+function buildReportRegistry(): Map<string, ReportEntry[]> {
+  const registry = new Map<string, ReportEntry[]>();
+  for (const dir of REPORT_DIRS) {
+    if (!existsSync(dir)) continue;
+    let names: string[];
+    try { names = readdirSync(dir); } catch { continue; }
+    for (const f of names) {
+      if (!f.endsWith('.html')) continue;
+      const path = join(dir, f);
+      try {
+        const stat = statSync(path);
+        if (!stat.isFile() || stat.size < 500) continue;
+        // Read only the head — URL is in title/meta near the top.
+        const content = readFileSync(path, 'utf-8');
+        const head = content.slice(0, 4000);
+        // Prefer explicit meta, fall back to the title's "psi-swarm report · <url>" pattern.
+        const metaMatch = head.match(META_URL_RE);
+        const titleMatch = !metaMatch ? head.match(TITLE_URL_RE) : null;
+        const url = metaMatch ? metaMatch[1] : titleMatch ? titleMatch[1].trim() : null;
+        if (!url) continue;
+        const genMatch = head.match(META_GENERATED_RE);
+        const generatedAt = genMatch ? genMatch[1] : undefined;
+        const arr = registry.get(url) ?? [];
+        arr.push({ path, mtime: stat.mtimeMs, url, generatedAt });
+        registry.set(url, arr);
+      } catch { /* skip */ }
+    }
+  }
+  for (const entries of registry.values()) entries.sort((a, b) => b.mtime - a.mtime);
+  return registry;
+}
+
+function getReportRegistry(): Map<string, ReportEntry[]> {
+  if (!reportRegistry || Date.now() - reportRegistryBuiltAt > REPORT_REGISTRY_TTL_MS) {
+    reportRegistry = buildReportRegistry();
+    reportRegistryBuiltAt = Date.now();
+  }
+  return reportRegistry;
+}
 
 function send(res: ServerResponse, status: number, body: unknown, origin?: string): void {
   res.statusCode = status;
@@ -362,26 +426,77 @@ export function createAgentServer(opts: ServeOptions): { listen: () => Promise<v
           arr.push({ ...r, path });
           byOrigin.set(origin, arr);
         }
+        const registry = getReportRegistry();
         const projects = Array.from(byOrigin.entries()).map(([origin, pages]) => {
-          pages.sort((a, b) => a.path.localeCompare(b.path));
-          const totalRuns = pages.reduce((s, p) => s + p.totalRuns, 0);
-          const lastRunAt = pages.reduce((s, p) => Math.max(s, p.lastRunAt), 0);
-          // Rollup metrics: worst-case across pages (the page bringing the project down).
-          const allMobile = pages.map((p) => p.mobileLcpP75).filter((v): v is number => typeof v === 'number');
-          const allDesktop = pages.map((p) => p.desktopLcpP75).filter((v): v is number => typeof v === 'number');
-          const allCls = pages.map((p) => p.cls).filter((v): v is number => typeof v === 'number');
+          // Attach per-page report info from the registry.
+          const enrichedPages = pages.map((p) => {
+            const entries = registry.get(p.url) ?? [];
+            return {
+              ...p,
+              reportCount: entries.length,
+              latestReportAt: entries[0]?.mtime,
+            };
+          }).sort((a, b) => a.path.localeCompare(b.path));
+          const totalRuns = enrichedPages.reduce((s, p) => s + p.totalRuns, 0);
+          const lastRunAt = enrichedPages.reduce((s, p) => Math.max(s, p.lastRunAt), 0);
+          const allMobile = enrichedPages.map((p) => p.mobileLcpP75).filter((v): v is number => typeof v === 'number');
+          const allDesktop = enrichedPages.map((p) => p.desktopLcpP75).filter((v): v is number => typeof v === 'number');
+          const allCls = enrichedPages.map((p) => p.cls).filter((v): v is number => typeof v === 'number');
           return {
             origin,
             totalRuns,
             lastRunAt,
-            pageCount: pages.length,
+            pageCount: enrichedPages.length,
             worstMobileLcp: allMobile.length > 0 ? Math.max(...allMobile) : undefined,
             worstDesktopLcp: allDesktop.length > 0 ? Math.max(...allDesktop) : undefined,
             worstCls: allCls.length > 0 ? Math.max(...allCls) : undefined,
-            pages,
+            pages: enrichedPages,
           };
         }).sort((a, b) => b.lastRunAt - a.lastRunAt);
         return send(res, 200, { projects }, opts.origin);
+      }
+
+      // GET /api/report?url=<url>&which=latest — serve the latest HTML report
+      if (req.method === 'GET' && url.pathname === '/api/report') {
+        const target = url.searchParams.get('url');
+        if (!target) return send(res, 400, { error: 'url required' }, opts.origin);
+        const registry = getReportRegistry();
+        const entries = registry.get(target);
+        if (!entries || entries.length === 0) {
+          return send(res, 404, { error: 'no report found for this url' }, opts.origin);
+        }
+        const which = url.searchParams.get('which') ?? 'latest';
+        const idx = which === 'latest' ? 0 : Math.min(parseInt(which, 10) || 0, entries.length - 1);
+        const entry = entries[idx];
+        try {
+          const html = readFileSync(entry.path, 'utf-8');
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'text/html; charset=utf-8');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Cache-Control', 'no-cache');
+          res.end(html);
+        } catch (err) {
+          return send(res, 500, { error: (err as Error).message }, opts.origin);
+        }
+        return;
+      }
+
+      // GET /api/reports?url=<url> — list all known reports for a URL
+      if (req.method === 'GET' && url.pathname === '/api/reports') {
+        const target = url.searchParams.get('url');
+        if (!target) return send(res, 400, { error: 'url required' }, opts.origin);
+        const registry = getReportRegistry();
+        const entries = registry.get(target) ?? [];
+        return send(
+          res,
+          200,
+          {
+            url: target,
+            count: entries.length,
+            entries: entries.map((e) => ({ mtime: e.mtime, generatedAt: e.generatedAt })),
+          },
+          opts.origin,
+        );
       }
 
       // GET /api/projects/history — per-URL timeseries for sparklines

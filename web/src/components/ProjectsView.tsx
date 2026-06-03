@@ -9,6 +9,8 @@ interface PageRow {
   mobileLcpP75?: number;
   desktopLcpP75?: number;
   cls?: number;
+  reportCount?: number;
+  latestReportAt?: number;
 }
 interface ProjectGrouped {
   origin: string;
@@ -352,7 +354,20 @@ function PageRowComp({ pg, expanded, onToggle, history, running, onRun }: { pg: 
           <div className="text-xs text-[var(--color-dim)] uppercase tracking-wide">CLS</div>
           <div className="font-mono text-sm" style={{ color: tierColor[clsTier(pg.cls)] }}>{typeof pg.cls === 'number' ? pg.cls.toFixed(3) : '—'}</div>
         </div>
-        <button onClick={onRun} disabled={running} className="px-3 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-cyan)] text-[var(--color-cyan)] rounded hover:bg-[var(--color-cyan)] hover:text-black transition disabled:opacity-40">{running ? '…running' : 'Run'}</button>
+        <div className="flex items-center justify-end gap-2">
+          {(pg.reportCount ?? 0) > 0 && (
+            <a
+              href={`http://127.0.0.1:7777/api/report?url=${encodeURIComponent(pg.url)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="px-2 py-1 text-xs text-[var(--color-cyan)] hover:underline whitespace-nowrap"
+              title={`${pg.reportCount} report(s) · latest ${pg.latestReportAt ? fmtRelative(pg.latestReportAt) : ''}`}
+            >
+              analysis →
+            </a>
+          )}
+          <button onClick={onRun} disabled={running} className="px-3 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-cyan)] text-[var(--color-cyan)] rounded hover:bg-[var(--color-cyan)] hover:text-black transition disabled:opacity-40">{running ? '…running' : 'Run'}</button>
+        </div>
       </div>
       {expanded && <HistoryDetail rows={history} />}
     </>

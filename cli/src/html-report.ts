@@ -338,6 +338,8 @@ export function renderHtmlReport(opts: HtmlReportOptions): string {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>psi-swarm report · ${escapeHtml(url)}</title>
+<meta name="psi-url" content="${escapeHtml(url)}">
+<meta name="psi-generated" content="${escapeHtml(generated)}">
 <style>${CSS}</style>
 </head>
 <body>
