@@ -125,4 +125,59 @@ export class AgentClient {
     if (!r.ok) throw new Error(`suggestions: HTTP ${r.status}`);
     return r.json();
   }
+
+  async diagnosis(runId: string): Promise<DiagnosisResponse> {
+    const r = await fetch(`${this.baseUrl}/api/runs/${runId}/diagnosis`);
+    if (!r.ok) throw new Error(`diagnosis: HTTP ${r.status}`);
+    return r.json();
+  }
+
+  subscribeReason(
+    runId: string,
+    onEvent: (e: ReasonEvent) => void,
+    opts: { model?: string; backend?: 'free-ai' | 'local-ai' | 'auto' } = {},
+  ): () => void {
+    const params = new URLSearchParams();
+    if (opts.model) params.set('model', opts.model);
+    if (opts.backend) params.set('backend', opts.backend);
+    const es = new EventSource(`${this.baseUrl}/api/runs/${runId}/reason?${params.toString()}`);
+    es.onmessage = (msg) => {
+      try {
+        onEvent(JSON.parse(msg.data) as ReasonEvent);
+      } catch {
+        /* ignore */
+      }
+    };
+    es.onerror = () => es.close();
+    return () => es.close();
+  }
 }
+
+export interface DiagnosisResponse {
+  byPreset: Record<
+    string,
+    {
+      diagnosis: {
+        preset: string;
+        presetLabel?: string;
+        formFactor?: 'mobile' | 'desktop';
+        okRuns: number;
+        lcpElement?: { snippet?: string; selector?: string; nodeLabel?: string };
+        lcpPhases?: Array<{ phase: string; medianMs: number; percent: string }>;
+      };
+      topOpportunities: Array<{
+        label: string;
+        display: string;
+        savings: string;
+        affects: string;
+        topItems: Array<{ label: string; detail?: string }>;
+      }>;
+    }
+  >;
+}
+
+export type ReasonEvent =
+  | { type: 'backend'; backend: 'free-ai' | 'local-ai' }
+  | { type: 'chunk'; text: string }
+  | { type: 'done'; modelUsed?: string; durationMs: number }
+  | { type: 'error'; message: string };

@@ -14,7 +14,7 @@ import { renderProgress } from './ui.js';
 import { detectFrameworkRoutes } from './routes.js';
 import { createAgentServer } from './server.js';
 import { diagnosePreset, type Diagnosis } from './diagnose.js';
-import { streamReasoning } from './reason.js';
+import { streamReasoning, probeLocalAi, type ReasonBackend } from './reason.js';
 
 const program = new Command();
 
@@ -40,8 +40,9 @@ program
   .option('--no-save', 'Skip saving to local history db')
   .option('--no-suggest', 'Skip post-run link suggestions')
   .option('--no-diagnose', 'Skip the "Why?" Lighthouse-audit opportunities section')
-  .option('--reason', 'Stream an LLM narrative explaining the numbers (needs FREE_AI_API_KEY)')
-  .option('--reason-model <id>', 'Override the gateway model id', 'auto')
+  .option('--reason', 'Stream an LLM narrative explaining the numbers')
+  .option('--reason-backend <name>', 'free-ai | local-ai | auto', 'auto')
+  .option('--reason-model <id>', 'Override the model id', 'auto')
   .action(async (url: string, opts) => {
     let presets: Preset[];
     try {
@@ -114,7 +115,7 @@ program
     console.log('\n' + renderSwarmReport(url, results, elapsed));
 
     if (opts.reason === true) {
-      await runReasoning(url, results, opts.reasonModel ?? 'auto');
+      await runReasoning(url, results, opts.reasonModel ?? 'auto', opts.reasonBackend ?? 'auto');
     }
 
     if (opts.suggest !== false) {
@@ -122,10 +123,18 @@ program
     }
   });
 
+async function resolveBackend(spec: string): Promise<ReasonBackend> {
+  if (spec === 'free-ai' || spec === 'local-ai') return spec;
+  // auto: prefer local-ai if reachable.
+  const local = await probeLocalAi();
+  return local ? 'local-ai' : 'free-ai';
+}
+
 async function runReasoning(
   url: string,
   results: RunResultWithArtifact[],
   model: string,
+  backendSpec: string,
 ): Promise<void> {
   const byPreset = new Map<string, RunResultWithArtifact[]>();
   for (const r of results) {
@@ -139,27 +148,20 @@ async function runReasoning(
   for (const [name, rs] of byPreset) {
     diagnoses.push(diagnosePreset(url, name, rs, rs[0].preset.label, rs[0].preset.formFactor));
   }
-  // Print a header, then stream the response.
-  console.log('\n' + chalk.cyan.bold('Reasoning') + chalk.dim(`  · model=${model}`));
+  const backend = await resolveBackend(backendSpec);
+  console.log('\n' + chalk.cyan.bold('Reasoning') + chalk.dim(`  · backend=${backend} · model=${model}`));
   process.stdout.write(chalk.dim('  '));
-  let firstChunk = true;
   try {
     const result = await streamReasoning(url, results, diagnoses, {
+      backend,
       model,
       onChunk: (chunk) => {
-        if (firstChunk) {
-          firstChunk = false;
-        }
-        // Soft wrap to ~84 chars with indent. cli-table3 width-aware wrap is overkill here.
         process.stdout.write(chunk.replace(/\n/g, '\n  '));
       },
     });
     process.stdout.write('\n');
-    if (result.modelUsed && result.modelUsed !== model) {
-      console.log(chalk.dim(`  · routed to ${result.modelUsed} (${(result.durationMs / 1000).toFixed(1)}s)`));
-    } else {
-      console.log(chalk.dim(`  · ${(result.durationMs / 1000).toFixed(1)}s`));
-    }
+    const modelLabel = result.modelUsed && result.modelUsed !== model ? `routed to ${result.modelUsed} · ` : '';
+    console.log(chalk.dim(`  · ${modelLabel}${(result.durationMs / 1000).toFixed(1)}s`));
   } catch (err) {
     console.error('\n' + chalk.red(`Reasoning failed: ${(err as Error).message}`));
   }

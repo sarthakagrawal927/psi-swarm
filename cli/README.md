@@ -65,6 +65,26 @@ For pure auth-gated SPAs where the bundle is the only source, you may see a smal
 
 Groups: `realistic` (all four), `mobile`, `desktop`, `psi` (matches Google PSI's mobile + desktop).
 
+### Reasoning about what's slow (`--reason`)
+
+After the percentile tables, psi-swarm can stream an LLM-generated **explanation** of why your numbers are what they are. Two backends:
+
+```bash
+# Auto: tries local-ai first, falls back to free-ai gateway
+node dist/cli.js run https://example.com --runs 3 --reason
+
+# Explicit
+node dist/cli.js run https://example.com --reason --reason-backend local-ai
+node dist/cli.js run https://example.com --reason --reason-backend free-ai
+```
+
+| Backend | Where it runs | Auth | Setup |
+| ------- | ------------- | ---- | ----- |
+| **local-ai** ([github.com/sarthakagrawal927/local-ai](https://github.com/sarthakagrawal927/local-ai)) | Your machine — wraps your already-authenticated Claude / Codex / Gemini CLI | None | `git clone … && npm install && npm start` (port 3456) |
+| **free-ai** ([github.com/sarthakagrawal927/free-ai](https://github.com/sarthakagrawal927/free-ai)) | Cloudflare Workers, OpenAI-compatible API | `FREE_AI_API_KEY` env var | `export FREE_AI_API_KEY=...` |
+
+The LLM gets a compacted summary of the Lighthouse audit data (ranked opportunities + LCP element + LCP phase breakdown — TTFB / Load Delay / Load Time / Render Delay), so its output cites specific files, byte counts, and percentages. Not generic advice.
+
 ### Comparing before/after a deploy
 
 ```bash

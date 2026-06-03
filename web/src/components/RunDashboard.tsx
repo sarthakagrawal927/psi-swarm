@@ -6,6 +6,7 @@ import {
   type PresetsResponse,
   type RunMetrics,
   type RunnerEvent,
+  type DiagnosisResponse,
 } from '../lib/agent.js';
 
 type View = 'connecting' | 'disconnected' | 'form' | 'running' | 'done';
@@ -92,8 +93,15 @@ export default function RunDashboard() {
   const [now, setNow] = useState<number>(Date.now());
   const [finished, setFinished] = useState(false);
   const [aggregate, setAggregate] = useState<RunSummary | null>(null);
+  const [diagnosis, setDiagnosis] = useState<DiagnosisResponse | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
   const [suggestionSources, setSuggestionSources] = useState<string[]>([]);
+  const [reasonText, setReasonText] = useState<string>('');
+  const [reasonStatus, setReasonStatus] = useState<'idle' | 'streaming' | 'done' | 'error'>('idle');
+  const [reasonModel, setReasonModel] = useState<string | undefined>();
+  const [reasonBackendUsed, setReasonBackendUsed] = useState<'free-ai' | 'local-ai' | undefined>();
+  const [reasonBackendPref, setReasonBackendPref] = useState<'auto' | 'free-ai' | 'local-ai'>('auto');
+  const [reasonError, setReasonError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Probe for the local agent on mount.
@@ -149,8 +157,13 @@ export default function RunDashboard() {
     setNow(Date.now());
     setFinished(false);
     setAggregate(null);
+    setDiagnosis(null);
     setSuggestions(null);
     setSuggestionSources([]);
+    setReasonText('');
+    setReasonStatus('idle');
+    setReasonError(null);
+    setReasonModel(undefined);
     setView('running');
 
     try {
@@ -211,6 +224,8 @@ export default function RunDashboard() {
     try {
       const agg = await client.aggregate(runId);
       setAggregate(agg as RunSummary);
+      const diag = await client.diagnosis(runId);
+      setDiagnosis(diag);
       const sug = await client.suggestions(runId);
       setSuggestions(sug.links);
       setSuggestionSources(sug.sources);
@@ -218,6 +233,32 @@ export default function RunDashboard() {
       setError((err as Error).message);
     }
     setView('done');
+  };
+
+  const startReasoning = () => {
+    if (!client || !runId) return;
+    setReasonText('');
+    setReasonStatus('streaming');
+    setReasonError(null);
+    setReasonModel(undefined);
+    setReasonBackendUsed(undefined);
+    client.subscribeReason(
+      runId,
+      (e) => {
+        if (e.type === 'backend') {
+          setReasonBackendUsed(e.backend);
+        } else if (e.type === 'chunk') {
+          setReasonText((prev) => prev + e.text);
+        } else if (e.type === 'done') {
+          setReasonStatus('done');
+          setReasonModel(e.modelUsed);
+        } else if (e.type === 'error') {
+          setReasonStatus('error');
+          setReasonError(e.message);
+        }
+      },
+      { backend: reasonBackendPref },
+    );
   };
 
   const presetStateList = useMemo(() => Array.from(presetStates.values()), [presetStates]);
@@ -270,6 +311,20 @@ export default function RunDashboard() {
 
       {view === 'done' && aggregate && (
         <ResultsView aggregate={aggregate} presetStates={presetStateList} />
+      )}
+
+      {view === 'done' && diagnosis && (
+        <WhyPanel
+          diagnosis={diagnosis}
+          reasonStatus={reasonStatus}
+          reasonText={reasonText}
+          reasonModel={reasonModel}
+          reasonBackendUsed={reasonBackendUsed}
+          reasonBackendPref={reasonBackendPref}
+          setReasonBackendPref={setReasonBackendPref}
+          reasonError={reasonError}
+          onAskReason={startReasoning}
+        />
       )}
 
       {view === 'done' && suggestions && (
@@ -566,6 +621,147 @@ function ErrorBanner({ error }: { error: string }) {
   return (
     <div className="border border-[var(--color-poor)] bg-red-950/30 text-[var(--color-poor)] rounded p-3 text-sm font-mono">
       {error}
+    </div>
+  );
+}
+
+interface WhyPanelProps {
+  diagnosis: DiagnosisResponse;
+  reasonStatus: 'idle' | 'streaming' | 'done' | 'error';
+  reasonText: string;
+  reasonModel?: string;
+  reasonBackendUsed?: 'free-ai' | 'local-ai';
+  reasonBackendPref: 'auto' | 'free-ai' | 'local-ai';
+  setReasonBackendPref: (b: 'auto' | 'free-ai' | 'local-ai') => void;
+  reasonError: string | null;
+  onAskReason: () => void;
+}
+
+function WhyPanel({ diagnosis, reasonStatus, reasonText, reasonModel, reasonBackendUsed, reasonBackendPref, setReasonBackendPref, reasonError, onAskReason }: WhyPanelProps) {
+  const presets = Object.entries(diagnosis.byPreset);
+  return (
+    <div className="border border-[var(--color-border)] bg-[var(--color-panel)] rounded-lg overflow-hidden">
+      <div className="px-5 py-3 border-b border-[var(--color-border)] flex items-baseline justify-between">
+        <span className="font-semibold">Why these numbers?</span>
+        <div className="flex items-center gap-3">
+          {reasonStatus === 'idle' && (
+            <>
+              <select
+                value={reasonBackendPref}
+                onChange={(e) => setReasonBackendPref(e.target.value as 'auto' | 'free-ai' | 'local-ai')}
+                className="text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded px-2 py-1 text-[var(--color-dim)] focus:outline-none focus:border-[var(--color-cyan)]"
+                title="LLM backend"
+              >
+                <option value="auto">backend: auto</option>
+                <option value="local-ai">local-ai (Claude CLI)</option>
+                <option value="free-ai">free-ai gateway</option>
+              </select>
+              <button
+                onClick={onAskReason}
+                className="text-xs px-3 py-1.5 bg-[var(--color-cyan)] text-black rounded font-medium hover:opacity-90 transition"
+              >
+                Ask LLM ✨
+              </button>
+            </>
+          )}
+          {reasonStatus === 'streaming' && (
+            <span className="text-xs text-[var(--color-dim)] flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[var(--color-cyan)] animate-pulse" />
+              streaming via {reasonBackendUsed ?? '...'}
+            </span>
+          )}
+          {reasonStatus === 'done' && (
+            <span className="text-xs text-[var(--color-dim)] font-mono">
+              {reasonBackendUsed && `${reasonBackendUsed} · `}
+              {reasonModel}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {(reasonText || reasonStatus !== 'idle') && (
+        <div className="px-5 py-4 border-b border-[var(--color-border)] bg-[var(--color-bg)]">
+          {reasonStatus === 'error' && reasonError && (
+            <div className="text-[var(--color-poor)] text-sm font-mono">Reasoning failed: {reasonError}</div>
+          )}
+          {reasonText && (
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">
+              {reasonText}
+              {reasonStatus === 'streaming' && <span className="inline-block w-2 h-4 bg-[var(--color-cyan)] ml-0.5 align-middle animate-pulse" />}
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="divide-y divide-[var(--color-border)]">
+        {presets.map(([name, data]) => (
+          <PresetWhy key={name} name={name} data={data} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PresetWhy({ name, data }: { name: string; data: DiagnosisResponse['byPreset'][string] }) {
+  const { diagnosis, topOpportunities } = data;
+  return (
+    <div className="px-5 py-4 space-y-3">
+      <div className="flex items-baseline justify-between">
+        <div>
+          <span className="font-semibold">{name}</span>
+          <span className="text-[var(--color-dim)] text-xs ml-3 font-mono">n = {diagnosis.okRuns}</span>
+        </div>
+        {diagnosis.presetLabel && <span className="text-xs text-[var(--color-dim)]">{diagnosis.presetLabel}</span>}
+      </div>
+
+      {diagnosis.lcpElement && (
+        <div className="text-sm">
+          <span className="text-[var(--color-dim)]">LCP element: </span>
+          <span className="font-mono text-[var(--color-warn)]">{diagnosis.lcpElement.nodeLabel ?? diagnosis.lcpElement.selector ?? '(unknown)'}</span>
+          {diagnosis.lcpElement.snippet && (
+            <div className="ml-4 text-xs text-[var(--color-dim)] font-mono mt-0.5 truncate">{diagnosis.lcpElement.snippet}</div>
+          )}
+        </div>
+      )}
+
+      {diagnosis.lcpPhases && diagnosis.lcpPhases.length > 0 && (
+        <div className="text-sm flex flex-wrap gap-x-4 gap-y-1">
+          <span className="text-[var(--color-dim)]">LCP phases:</span>
+          {diagnosis.lcpPhases.map((p) => {
+            const pct = parseInt(p.percent, 10);
+            const color = pct >= 40 ? 'text-[var(--color-poor)]' : pct >= 25 ? 'text-[var(--color-warn)]' : 'text-[var(--color-dim)]';
+            return (
+              <span key={p.phase} className={`font-mono text-xs ${color}`}>
+                {p.phase} {p.percent} ({p.medianMs >= 1000 ? `${(p.medianMs / 1000).toFixed(1)}s` : `${Math.round(p.medianMs)}ms`})
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      {topOpportunities.length > 0 && (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-[var(--color-dim)] text-xs uppercase tracking-wide">
+              <th className="text-left py-1.5">Opportunity</th>
+              <th className="text-left py-1.5">Impact</th>
+              <th className="text-left py-1.5">Top item</th>
+            </tr>
+          </thead>
+          <tbody>
+            {topOpportunities.map((op, i) => (
+              <tr key={i} className="border-t border-[var(--color-border)]">
+                <td className="py-1.5 pr-3 font-medium">{op.label}</td>
+                <td className="py-1.5 pr-3 font-mono text-xs text-[var(--color-warn)]">{op.savings || op.display || '—'}</td>
+                <td className="py-1.5 font-mono text-xs text-[var(--color-dim)] truncate max-w-[420px]">
+                  {op.topItems[0]?.label ?? '—'}
+                  {op.topItems[0]?.detail && <span className="ml-1 text-[var(--color-dim)]">({op.topItems[0].detail})</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

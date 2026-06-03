@@ -8,6 +8,8 @@ import { profileMachine, resolveParallelism } from './machine.js';
 import { discover, rank, type DiscoveredLink } from './discover.js';
 import { detectFrameworkRoutes } from './routes.js';
 import { computeStats } from './stats.js';
+import { diagnosePreset, rankOpportunities, formatAggregatedAudit, type Diagnosis } from './diagnose.js';
+import { streamReasoning, probeLocalAi, type ReasonBackend } from './reason.js';
 
 interface RunRecord {
   id: string;
@@ -85,6 +87,7 @@ function startRun(record: RunRecord): void {
       runs: record.runs,
       parallel: record.parallel,
       captureScripts: true,
+      captureAudits: true,
     })
     .then((results) => {
       record.results = results;
@@ -352,6 +355,92 @@ export function createAgentServer(opts: ServeOptions): { listen: () => Promise<v
         if (!body.url) return send(res, 400, { error: 'url required' }, opts.origin);
         const { links, source } = await discover(body.url, { maxLinks: 30 });
         return send(res, 200, { links, source }, opts.origin);
+      }
+
+      // GET /api/runs/:id/diagnosis — return Layer 1 (deterministic) diagnosis per preset
+      const diagMatch = url.pathname.match(/^\/api\/runs\/([a-zA-Z0-9]+)\/diagnosis$/);
+      if (req.method === 'GET' && diagMatch) {
+        const record = runs.get(diagMatch[1]);
+        if (!record) return send(res, 404, { error: 'run not found' }, opts.origin);
+        const byPreset = new Map<string, RunResultWithArtifact[]>();
+        for (const r of record.results) {
+          if (r.error) continue;
+          const arr = byPreset.get(r.preset.name) ?? [];
+          arr.push(r);
+          byPreset.set(r.preset.name, arr);
+        }
+        const out: Record<string, { diagnosis: Diagnosis; topOpportunities: ReturnType<typeof formatAggregatedAudit>[] }> = {};
+        for (const [name, rs] of byPreset) {
+          const d = diagnosePreset(record.url, name, rs, rs[0].preset.label, rs[0].preset.formFactor);
+          const ranked = rankOpportunities(d, 8);
+          out[name] = { diagnosis: d, topOpportunities: ranked.map(formatAggregatedAudit) };
+        }
+        return send(res, 200, { byPreset: out }, opts.origin);
+      }
+
+      // GET /api/runs/:id/reason — stream LLM narrative via SSE (Layer 2)
+      const reasonMatch = url.pathname.match(/^\/api\/runs\/([a-zA-Z0-9]+)\/reason$/);
+      if (req.method === 'GET' && reasonMatch) {
+        const record = runs.get(reasonMatch[1]);
+        if (!record) return send(res, 404, { error: 'run not found' }, opts.origin);
+        if (record.status !== 'complete') {
+          return send(res, 409, { error: 'run not yet complete' }, opts.origin);
+        }
+        const backendParam = url.searchParams.get('backend') ?? 'auto';
+        let backend: ReasonBackend;
+        if (backendParam === 'free-ai' || backendParam === 'local-ai') {
+          backend = backendParam;
+        } else {
+          backend = (await probeLocalAi()) ? 'local-ai' : 'free-ai';
+        }
+        if (backend === 'free-ai') {
+          const apiKey = process.env.FREE_AI_API_KEY ?? process.env.GATEWAY_API_KEY;
+          if (!apiKey) {
+            return send(
+              res,
+              503,
+              {
+                error:
+                  'FREE_AI_API_KEY not set on the agent and local-ai not reachable. Either start local-ai (github.com/sarthakagrawal927/local-ai) on :3456, or restart `psi-swarm serve` with FREE_AI_API_KEY=...',
+              },
+              opts.origin,
+            );
+          }
+        }
+        const model = url.searchParams.get('model') ?? 'auto';
+        const byPreset = new Map<string, RunResultWithArtifact[]>();
+        for (const r of record.results) {
+          if (r.error) continue;
+          const arr = byPreset.get(r.preset.name) ?? [];
+          arr.push(r);
+          byPreset.set(r.preset.name, arr);
+        }
+        const diagnoses: Diagnosis[] = [];
+        for (const [name, rs] of byPreset) {
+          diagnoses.push(diagnosePreset(record.url, name, rs, rs[0].preset.label, rs[0].preset.formFactor));
+        }
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache, no-transform');
+        res.setHeader('Connection', 'keep-alive');
+        res.setHeader('Access-Control-Allow-Origin', opts.origin);
+        res.flushHeaders?.();
+        // Tell the client which backend was resolved.
+        res.write(`data: ${JSON.stringify({ type: 'backend', backend })}\n\n`);
+        try {
+          const result = await streamReasoning(record.url, record.results, diagnoses, {
+            backend,
+            model,
+            onChunk: (chunk) => {
+              res.write(`data: ${JSON.stringify({ type: 'chunk', text: chunk })}\n\n`);
+            },
+          });
+          res.write(`data: ${JSON.stringify({ type: 'done', modelUsed: result.modelUsed, durationMs: result.durationMs })}\n\n`);
+        } catch (err) {
+          res.write(`data: ${JSON.stringify({ type: 'error', message: (err as Error).message })}\n\n`);
+        }
+        res.end();
+        return;
       }
 
       // GET /api/aggregate?runId=... — compute percentiles server-side

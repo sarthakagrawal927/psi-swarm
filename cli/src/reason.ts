@@ -4,6 +4,9 @@ import type { RunResultWithArtifact, MetricSet } from './runner.js';
 
 const DEFAULT_GATEWAY = 'https://free-ai-gateway.sarthakagrawal927.workers.dev';
 const DEFAULT_PROJECT = 'psi-swarm';
+const DEFAULT_LOCAL_AI = 'http://localhost:3456';
+
+export type ReasonBackend = 'free-ai' | 'local-ai';
 
 const SYSTEM_PROMPT = `You are analysing Lighthouse-derived performance data for a webpage. The data comes from N repeated Lighthouse runs against the same URL under controlled lab conditions (emulated network and CPU). Your job is to explain WHY the metrics are what they are and what specific changes would most improve them.
 
@@ -25,10 +28,15 @@ Respond in plain text (no markdown headers, no asterisks, no bullets unless natu
 Order: (1) what's bad in one sentence, (2) the most likely cause grounded in the audit data, (3) the highest-impact fix with the expected gain, (4) a secondary fix if material.`;
 
 export interface ReasonOptions {
+  backend?: ReasonBackend;
   model?: string;
+  // free-ai
   gatewayUrl?: string;
   projectId?: string;
   apiKey?: string;
+  // local-ai
+  localAiUrl?: string;
+  localAiProvider?: 'claude' | 'codex' | 'gemini';
   onChunk?: (chunk: string) => void;
 }
 
@@ -113,8 +121,8 @@ export interface ReasonResult {
 }
 
 /**
- * Stream a reasoning response from the free-ai gateway. Reads FREE_AI_API_KEY
- * from the environment unless an explicit apiKey is passed.
+ * Stream a reasoning response. Defaults to local-ai if it's reachable,
+ * falls back to free-ai gateway. Explicit `backend` opt overrides.
  */
 export async function streamReasoning(
   url: string,
@@ -122,18 +130,26 @@ export async function streamReasoning(
   diagnoses: Diagnosis[],
   opts: ReasonOptions = {},
 ): Promise<ReasonResult> {
+  const backend: ReasonBackend = opts.backend ?? 'free-ai';
+  const payload = buildReasoningPayload(url, results, diagnoses);
+  const userMessage = `Analyse this swarm. URL = ${url}\n\nData (JSON):\n${JSON.stringify(payload, null, 2)}`;
+  const startedAt = Date.now();
+  if (backend === 'local-ai') {
+    return streamLocalAi(userMessage, opts, startedAt);
+  }
+  return streamFreeAi(userMessage, opts, startedAt);
+}
+
+async function streamFreeAi(userMessage: string, opts: ReasonOptions, startedAt: number): Promise<ReasonResult> {
   const apiKey = opts.apiKey ?? process.env.FREE_AI_API_KEY ?? process.env.GATEWAY_API_KEY;
   if (!apiKey) {
     throw new Error(
-      'Missing FREE_AI_API_KEY env var. Set it to a key issued by the free-ai gateway operator.',
+      'Missing FREE_AI_API_KEY env var. Set it to a key issued by the free-ai gateway operator, or use --reason-backend local-ai.',
     );
   }
   const gateway = opts.gatewayUrl ?? process.env.FREE_AI_GATEWAY_URL ?? DEFAULT_GATEWAY;
   const projectId = opts.projectId ?? process.env.FREE_AI_PROJECT_ID ?? DEFAULT_PROJECT;
   const model = opts.model ?? 'auto';
-
-  const payload = buildReasoningPayload(url, results, diagnoses);
-  const startedAt = Date.now();
 
   const body = JSON.stringify({
     model,
@@ -141,10 +157,7 @@ export async function streamReasoning(
     stream: true,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: `Analyse this swarm. URL = ${url}\n\nData (JSON):\n${JSON.stringify(payload, null, 2)}`,
-      },
+      { role: 'user', content: userMessage },
     ],
   });
 
@@ -159,7 +172,7 @@ export async function streamReasoning(
   });
   if (!res.ok) {
     const txt = await res.text();
-    throw new Error(`gateway HTTP ${res.status}: ${txt.slice(0, 400)}`);
+    throw new Error(`free-ai gateway HTTP ${res.status}: ${txt.slice(0, 400)}`);
   }
   if (!res.body) throw new Error('gateway returned no body');
 
@@ -194,4 +207,68 @@ export async function streamReasoning(
   }
 
   return { text: acc.trim(), modelUsed, durationMs: Date.now() - startedAt };
+}
+
+async function streamLocalAi(userMessage: string, opts: ReasonOptions, startedAt: number): Promise<ReasonResult> {
+  const baseUrl = opts.localAiUrl ?? process.env.LOCAL_AI_URL ?? DEFAULT_LOCAL_AI;
+  const provider = opts.localAiProvider ?? 'claude';
+  const model = opts.model && opts.model !== 'auto' ? opts.model : undefined;
+
+  const body = JSON.stringify({
+    provider,
+    model,
+    systemPrompt: SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: userMessage }],
+  });
+
+  const res = await fetch(`${baseUrl}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`local-ai HTTP ${res.status}: ${txt.slice(0, 400)}`);
+  }
+  if (!res.body) throw new Error('local-ai returned no body');
+
+  let acc = '';
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, idx).trim();
+      buffer = buffer.slice(idx + 1);
+      if (!line.startsWith('data:')) continue;
+      const data = line.slice(5).trim();
+      if (data === '[DONE]' || !data) continue;
+      try {
+        const parsed = JSON.parse(data);
+        const chunk = (parsed.text as string | undefined) ?? (parsed.delta as string | undefined);
+        if (chunk) {
+          acc += chunk;
+          opts.onChunk?.(chunk);
+        }
+      } catch {
+        /* skip */
+      }
+    }
+  }
+  return { text: acc.trim(), modelUsed: `local-ai:${provider}`, durationMs: Date.now() - startedAt };
+}
+
+export async function probeLocalAi(baseUrl: string = DEFAULT_LOCAL_AI): Promise<boolean> {
+  try {
+    const res = await fetch(`${baseUrl}/health`);
+    if (!res.ok) return false;
+    const json = (await res.json()) as { status?: string };
+    return json.status === 'ok';
+  } catch {
+    return false;
+  }
 }
