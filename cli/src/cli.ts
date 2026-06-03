@@ -16,6 +16,9 @@ import { detectFrameworkRoutes } from './routes.js';
 import { createAgentServer } from './server.js';
 import { diagnosePreset, type Diagnosis } from './diagnose.js';
 import { streamReasoning, probeLocalAi, type ReasonBackend } from './reason.js';
+import { renderHtmlReport } from './html-report.js';
+import { writeFileSync } from 'node:fs';
+import { resolve as pathResolve } from 'node:path';
 
 const program = new Command();
 
@@ -46,6 +49,8 @@ program
   .option('--reason-model <id>', 'Override the model id', 'auto')
   .option('--profile <name>', 'Traffic profile for the weighted verdict (mobile-heavy|desktop-heavy|balanced|mobile-only)')
   .option('--no-crux', 'Skip the CrUX real-user p75 lookup')
+  .option('--output <fmt>', 'Also write a report file: html', undefined)
+  .option('--output-path <file>', 'Override the report output path')
   .action(async (url: string, opts) => {
     let presets: Preset[];
     try {
@@ -139,8 +144,27 @@ program
     }
     console.log('\n' + renderSwarmReport(url, results, elapsed, { cruxByFormFactor, trafficProfile }));
 
+    let reasoningCapture: { text: string; backend?: string; model?: string; durationMs?: number } | undefined;
     if (opts.reason === true) {
-      await runReasoning(url, results, opts.reasonModel ?? 'auto', opts.reasonBackend ?? 'auto');
+      reasoningCapture = await runReasoning(url, results, opts.reasonModel ?? 'auto', opts.reasonBackend ?? 'auto');
+    }
+
+    if (opts.output === 'html') {
+      const slug = url.replace(/^https?:\/\//, '').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_').slice(0, 60);
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const defaultPath = `psi-swarm-${slug}-${stamp}.html`;
+      const outPath = pathResolve(process.cwd(), opts.outputPath ?? defaultPath);
+      const html = renderHtmlReport({
+        url,
+        results,
+        elapsedMs: elapsed,
+        cruxByFormFactor,
+        reasoning: reasoningCapture,
+      });
+      writeFileSync(outPath, html, 'utf-8');
+      console.log('\n' + chalk.dim('Wrote HTML report → ') + chalk.cyan(outPath));
+    } else if (opts.output && opts.output !== 'html') {
+      console.error(chalk.red(`Unknown --output format: ${opts.output}. Try: html`));
     }
 
     if (opts.suggest !== false) {
@@ -160,7 +184,7 @@ async function runReasoning(
   results: RunResultWithArtifact[],
   model: string,
   backendSpec: string,
-): Promise<void> {
+): Promise<{ text: string; backend: string; model?: string; durationMs?: number } | undefined> {
   const byPreset = new Map<string, RunResultWithArtifact[]>();
   for (const r of results) {
     if (r.error) continue;
@@ -168,7 +192,7 @@ async function runReasoning(
     arr.push(r);
     byPreset.set(r.preset.name, arr);
   }
-  if (byPreset.size === 0) return;
+  if (byPreset.size === 0) return undefined;
   const diagnoses: Diagnosis[] = [];
   for (const [name, rs] of byPreset) {
     diagnoses.push(diagnosePreset(url, name, rs, rs[0].preset.label, rs[0].preset.formFactor));
@@ -176,19 +200,23 @@ async function runReasoning(
   const backend = await resolveBackend(backendSpec);
   console.log('\n' + chalk.cyan.bold('Reasoning') + chalk.dim(`  · backend=${backend} · model=${model}`));
   process.stdout.write(chalk.dim('  '));
+  let acc = '';
   try {
     const result = await streamReasoning(url, results, diagnoses, {
       backend,
       model,
       onChunk: (chunk) => {
+        acc += chunk;
         process.stdout.write(chunk.replace(/\n/g, '\n  '));
       },
     });
     process.stdout.write('\n');
     const modelLabel = result.modelUsed && result.modelUsed !== model ? `routed to ${result.modelUsed} · ` : '';
     console.log(chalk.dim(`  · ${modelLabel}${(result.durationMs / 1000).toFixed(1)}s`));
+    return { text: acc.trim(), backend, model: result.modelUsed, durationMs: result.durationMs };
   } catch (err) {
     console.error('\n' + chalk.red(`Reasoning failed: ${(err as Error).message}`));
+    return acc ? { text: acc.trim(), backend, model } : undefined;
   }
 }
 

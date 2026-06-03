@@ -81,6 +81,27 @@ npm run cli -- run https://example.com --reason
 
 **For the cloud path**, `OPENAI_BASE_URL` lets you point at whatever provider you want: official OpenAI, OpenRouter, Groq, Together, a self-hosted vLLM/Ollama, or your own gateway. As long as it implements `POST /chat/completions` with the standard request/response shape, it works.
 
+### Sharing a static HTML report
+
+```bash
+npm run cli -- run https://example.com --runs 5 --reason --output html --output-path report.html
+open report.html   # macOS — or just open the file path
+```
+
+Self-contained ~17 KB HTML with all the same data the terminal shows: percentile tables, CrUX comparison, lab-vs-field gap, LCP element / phase breakdown, ranked opportunities, and the LLM narrative.
+
+### Using psi-swarm from Claude Code / Codex
+
+Install the skill once:
+
+```bash
+npm run install:skill
+```
+
+After that, **Claude Code recognises perf-related questions automatically** — "why is example.com slow on mobile?", "check the Lighthouse score of x.com", "compare these two URLs", etc. — and runs psi-swarm with the right flags.
+
+For **Codex** (which uses `~/.codex/AGENTS.md` instead of skills), open `.claude/skills/psi-swarm/SKILL.md` after installing and copy the "For Codex users" section into your AGENTS.md.
+
 See [`cli/README.md`](./cli/README.md) for every command and option.
 
 ## What's different from PageSpeed Insights / Lighthouse alone

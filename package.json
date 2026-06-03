@@ -15,7 +15,8 @@
     "web": "npm --workspace web run dev",
     "build:cli": "npm --workspace cli run build",
     "build:web": "npm --workspace web run build",
-    "dev:cli": "npm --workspace cli run dev"
+    "dev:cli": "npm --workspace cli run dev",
+    "install:skill": "node scripts/install-skill.mjs"
   },
   "engines": {
     "node": ">=20 <24",
