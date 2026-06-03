@@ -1,0 +1,29 @@
+---
+import '../styles/global.css';
+import ProjectsView from '../components/ProjectsView.tsx';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>psi-swarm · projects</title>
+  </head>
+  <body class="min-h-screen">
+    <main class="max-w-5xl mx-auto px-6 py-10">
+      <header class="mb-8">
+        <h1 class="text-3xl font-bold tracking-tight">
+          <span class="text-[var(--color-cyan)]">psi</span>-swarm · projects
+        </h1>
+        <p class="text-[var(--color-dim)] mt-1 text-sm">
+          Tracked URLs from your local SQLite history. Latest performance, recent trend, click to drill into the full run history.
+        </p>
+        <p class="text-[var(--color-dim)] mt-3 text-xs">
+          <a href="./" class="text-[var(--color-cyan)] hover:underline">← single-URL dashboard</a>
+        </p>
+      </header>
+      <ProjectsView client:load />
+    </main>
+  </body>
+</html>

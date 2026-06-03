@@ -337,6 +337,26 @@ export function createAgentServer(opts: ServeOptions): { listen: () => Promise<v
         return send(res, 200, { urls: out }, opts.origin);
       }
 
+      // GET /api/projects — fleet dashboard view
+      if (req.method === 'GET' && url.pathname === '/api/projects') {
+        const windowDays = parseInt(url.searchParams.get('windowDays') ?? '30', 10);
+        const db = new HistoryDB();
+        const projects = db.projects(windowDays);
+        db.close();
+        return send(res, 200, { projects }, opts.origin);
+      }
+
+      // GET /api/projects/history — per-URL timeseries for sparklines
+      if (req.method === 'GET' && url.pathname === '/api/projects/history') {
+        const u = url.searchParams.get('url');
+        if (!u) return send(res, 400, { error: 'url query param required' }, opts.origin);
+        const limit = parseInt(url.searchParams.get('limit') ?? '60', 10);
+        const db = new HistoryDB();
+        const rows = db.history(u, limit);
+        db.close();
+        return send(res, 200, { url: u, rows }, opts.origin);
+      }
+
       // GET /api/history
       if (req.method === 'GET' && url.pathname === '/api/history') {
         const u = url.searchParams.get('url');

@@ -140,6 +140,92 @@ export class HistoryDB {
       .all() as { url: string; count: number; last: number }[];
   }
 
+  /**
+   * For each tracked URL, return aggregate stats useful for a fleet dashboard:
+   * total runs, last run time, plus median LCP/CLS/perf-score over the last `windowDays`
+   * for both mobile-mid and desktop presets.
+   */
+  projects(windowDays = 30): Array<{
+    url: string;
+    totalRuns: number;
+    lastRunAt: number;
+    mobileLcpP75?: number;
+    desktopLcpP75?: number;
+    mobilePerfScoreP50?: number;
+    desktopPerfScoreP50?: number;
+    cls?: number;
+  }> {
+    const cutoff = Date.now() - windowDays * 24 * 60 * 60 * 1000;
+    const urls = this.db
+      .prepare(`SELECT url, COUNT(*) as count, MAX(started_at) as last FROM runs GROUP BY url ORDER BY last DESC`)
+      .all() as { url: string; count: number; last: number }[];
+
+    const stmt = this.db.prepare(
+      `SELECT lcp, cls, performance_score FROM runs
+       WHERE url = ? AND preset = ? AND started_at >= ? AND error IS NULL
+       ORDER BY started_at DESC LIMIT 200`,
+    );
+
+    const percentile = (vs: number[], p: number): number | undefined => {
+      const xs = vs.filter((v): v is number => typeof v === 'number' && Number.isFinite(v)).sort((a, b) => a - b);
+      if (xs.length === 0) return undefined;
+      const idx = (p / 100) * (xs.length - 1);
+      const lo = Math.floor(idx);
+      const hi = Math.ceil(idx);
+      if (lo === hi) return xs[lo];
+      const w = idx - lo;
+      return xs[lo] * (1 - w) + xs[hi] * w;
+    };
+
+    return urls.map((u) => {
+      const mobile = stmt.all(u.url, 'mobile-mid', cutoff) as Array<{ lcp: number | null; cls: number | null; performance_score: number | null }>;
+      const desktop = stmt.all(u.url, 'desktop', cutoff) as Array<{ lcp: number | null; cls: number | null; performance_score: number | null }>;
+      const mlcp = mobile.map((r) => r.lcp).filter((v): v is number => typeof v === 'number');
+      const dlcp = desktop.map((r) => r.lcp).filter((v): v is number => typeof v === 'number');
+      const mscore = mobile.map((r) => r.performance_score).filter((v): v is number => typeof v === 'number');
+      const dscore = desktop.map((r) => r.performance_score).filter((v): v is number => typeof v === 'number');
+      const allCls = [...mobile, ...desktop].map((r) => r.cls).filter((v): v is number => typeof v === 'number');
+      return {
+        url: u.url,
+        totalRuns: u.count,
+        lastRunAt: u.last,
+        mobileLcpP75: percentile(mlcp, 75),
+        desktopLcpP75: percentile(dlcp, 75),
+        mobilePerfScoreP50: percentile(mscore, 50),
+        desktopPerfScoreP50: percentile(dscore, 50),
+        cls: percentile(allCls, 75),
+      };
+    });
+  }
+
+  /**
+   * Per-URL time series for sparklines. Returns up to `limit` recent runs across
+   * any preset, grouped by run (preserves preset for client filtering).
+   */
+  history(url: string, limit = 60): Array<{
+    started_at: number;
+    preset: string;
+    lcp: number | null;
+    cls: number | null;
+    tbt: number | null;
+    fcp: number | null;
+    ttfb: number | null;
+    performance_score: number | null;
+    tag: string | null;
+  }> {
+    return this.db
+      .prepare(
+        `SELECT started_at, preset, lcp, cls, tbt, fcp, ttfb, performance_score, tag
+         FROM runs WHERE url = ? AND error IS NULL ORDER BY started_at DESC LIMIT ?`,
+      )
+      .all(url, limit) as Array<{
+        started_at: number; preset: string;
+        lcp: number | null; cls: number | null; tbt: number | null;
+        fcp: number | null; ttfb: number | null; performance_score: number | null;
+        tag: string | null;
+      }>;
+  }
+
   close() {
     this.db.close();
   }
