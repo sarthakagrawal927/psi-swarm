@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-06-04
+Last updated: 2026-06-05
 
 ## Current Scope
 
@@ -28,3 +28,29 @@ psi-swarm is a local-first helper for fleet and web-performance work. It measure
 - Hosted RUM or real-user p99 collection is deferred; psi-swarm is lab data, not a RUM replacement.
 - Cloud execution is parked because compute is intentionally local for now.
 - Paid monitoring, team accounts, and alerting are deferred behind a stronger local workflow.
+
+## Fleet Perf Push 2026-06 — Open Follow-ups
+
+These items came out of the 2026-06-04/05 fleet desktop-LCP push (goal: <500 ms
+p75 across all 23 sites). The push closed 5 sites under 500 ms via the Worker
++ Astro overlay pattern, self-hosted fonts, opacity-anim LCP fixes, CF Cache
+Rules, and `caches.default` data wrapping. The remaining gap is being closed
+at the app level — Argo (cost) and Vercel (external dep) are off the table.
+
+1. **Knowledgebase landing site** — build Astro frontend for the FastAPI+Qdrant
+   RAG at `fleet/knowledgebase/`. Not perf-critical; tracked here because it
+   completes the fleet inventory.
+2. **psi-swarm × saas-maker integration** — wire this CLI into the saas-maker
+   fleet workflow so desktop LCP samples flow into Cockpit dashboards. Spec
+   notes belong above in "Planned Next" once started.
+3. **Beasties critical-CSS pass** — high-signal Beasties-only pass on
+   saas-maker cockpit + sarthakagrawal.dev. Both have dynamic `/` so the
+   Astro overlay does not apply; only the Beasties half is safe. Expected
+   ~150–300 ms LCP win.
+
+Also parked (intentional, do not re-open without a budget decision):
+
+- **Custom-domain Worker TTFB floor** — CF Workers/Pages on custom domains
+  floor at 400–1000 ms TTFB in Lighthouse cold-sim without Argo Smart Routing.
+  User ruled out both Argo ($5/mo) and Vercel (external dep). Workers.dev
+  URLs hit <500 ms; custom domains do not.
