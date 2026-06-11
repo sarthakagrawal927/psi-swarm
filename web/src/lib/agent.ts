@@ -98,6 +98,20 @@ export class AgentClient {
     return r.json();
   }
 
+  async runStatus(runId: string): Promise<{ status: 'pending' | 'running' | 'complete' | 'error' }> {
+    const r = await fetch(`${this.baseUrl}/api/runs/${runId}`);
+    if (!r.ok) throw new Error(`runStatus: HTTP ${r.status}`);
+    return r.json();
+  }
+
+  async waitForRunCompletion(runId: string, pollIntervalMs = 1_500): Promise<void> {
+    for (;;) {
+      const status = await this.runStatus(runId);
+      if (status.status === 'complete' || status.status === 'error') return;
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+  }
+
   subscribe(runId: string, onEvent: (e: RunnerEvent) => void): () => void {
     const es = new EventSource(`${this.baseUrl}/api/runs/${runId}/events`);
     es.onmessage = (msg) => {

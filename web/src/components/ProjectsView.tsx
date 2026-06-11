@@ -171,8 +171,10 @@ export default function ProjectsView() {
     setError(null);
     try {
       for (const pg of proj.pages) {
-        await client.startRun({ url: pg.url, runs: 3, presets: 'psi', parallel: 1 });
+        const { runId } = await client.startRun({ url: pg.url, runs: 3, presets: 'psi', parallel: 1 });
+        await client.waitForRunCompletion(runId);
       }
+      await loadProjects();
     } catch (err) {
       setError((err as Error).message);
     }
