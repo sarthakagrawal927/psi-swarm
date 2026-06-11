@@ -170,8 +170,16 @@ export default function ProjectsView() {
     if (!client) return;
     setError(null);
     try {
+      const failures: string[] = [];
       for (const pg of proj.pages) {
-        await client.startRun({ url: pg.url, runs: 3, presets: 'psi', parallel: 1 });
+        try {
+          await client.startRun({ url: pg.url, runs: 3, presets: 'psi', parallel: 1 });
+        } catch (err) {
+          failures.push(`${pg.path}: ${(err as Error).message}`);
+        }
+      }
+      if (failures.length > 0) {
+        setError(`Run all pages completed with ${failures.length} failure(s): ${failures.join(' | ')}`);
       }
     } catch (err) {
       setError((err as Error).message);
