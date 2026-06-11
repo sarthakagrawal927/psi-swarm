@@ -159,10 +159,12 @@ export default function ProjectsView() {
     setRunningUrl(url);
     setError(null);
     try {
-      await client.startRun({ url, runs: 3, presets: 'psi', parallel: 1 });
-      setTimeout(() => { void loadProjects(); setRunningUrl(null); }, 90_000);
+      const { runId } = await client.startRun({ url, runs: 3, presets: 'psi', parallel: 1 });
+      await client.waitForRunCompletion(runId);
+      await loadProjects();
     } catch (err) {
       setError((err as Error).message);
+    } finally {
       setRunningUrl(null);
     }
   };
