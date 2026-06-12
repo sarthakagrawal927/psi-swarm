@@ -29,10 +29,9 @@ psi-swarm is a local-first website performance tracker. It measures Web Vitals a
 
 1. Keep Node 22 LTS as the supported path until the Lighthouse 12 / Node 24 trace-mark issue is resolved.
 2. Improve the local web controller so users can run, compare, and inspect swarms without dropping to the CLI.
-3. Add an optional trace-insight adapter that stores LLM-readable diagnosis
-   beside existing percentile history.
-4. Add clearer public/demo examples that compare real product pages before and after performance work.
-5. Decide whether psi-swarm should add a hosted report/gallery surface on top of the local-first CLI and web controller.
+3. Add an optional trace-insight adapter that stores LLM-readable diagnosis beside existing percentile history. See [docs/prds/trace-insight-adapter.md](docs/prds/trace-insight-adapter.md).
+4. Add clearer public/demo examples that compare real product pages before and after performance work. See [docs/prds/shareable-demo-gallery.md](docs/prds/shareable-demo-gallery.md).
+5. Add a local regression watchlist so the highest-value URLs can be monitored and compared from the local history store. See [docs/prds/local-regression-watchlist.md](docs/prds/local-regression-watchlist.md).
 
 ## Deferred / Parked
 
