@@ -18,8 +18,9 @@ import { createAgentServer } from './server.js';
 import { diagnosePreset, type Diagnosis } from './diagnose.js';
 import { streamReasoning, probeLocalAi, type ReasonBackend } from './reason.js';
 import { renderHtmlReport } from './html-report.js';
-import { writeFileSync } from 'node:fs';
-import { resolve as pathResolve } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve as pathResolve, join as pathJoin } from 'node:path';
+import { homedir } from 'node:os';
 
 const program = new Command();
 
@@ -164,8 +165,10 @@ program
     if (opts.output === 'html') {
       const slug = url.replace(/^https?:\/\//, '').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_').slice(0, 60);
       const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const defaultPath = `psi-swarm-${slug}-${stamp}.html`;
+      const defaultDir = pathResolve(homedir(), '.psi-swarm', 'reports');
+      const defaultPath = pathJoin(defaultDir, `psi-swarm-${slug}-${stamp}.html`);
       const outPath = pathResolve(process.cwd(), opts.outputPath ?? defaultPath);
+      mkdirSync(pathResolve(outPath, '..'), { recursive: true });
       const html = renderHtmlReport({
         url,
         results,

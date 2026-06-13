@@ -119,9 +119,12 @@ export default function ProjectsView() {
 
   useEffect(() => {
     void (async () => {
-      const probe = await probeAgent();
+      const pageUrl = new URL(window.location.href);
+      const preferredAgent = pageUrl.searchParams.get('agent') ?? undefined;
+      const token = pageUrl.searchParams.get('token') ?? undefined;
+      const probe = await probeAgent(undefined, { preferredUrl: preferredAgent, token });
       if (!probe) { setStatus('disconnected'); return; }
-      setClient(new AgentClient(probe.url));
+      setClient(new AgentClient(probe.url, token));
       setHealth(probe.health);
       setStatus('ready');
     })();
@@ -130,7 +133,7 @@ export default function ProjectsView() {
   const loadProjects = async () => {
     if (!client) return;
     try {
-      const res = await fetch(`${client.baseUrl}/api/projects`);
+      const res = await fetch(client.requestUrl('/api/projects'));
       const data = (await res.json()) as { projects: ProjectGrouped[] };
       setProjects(data.projects ?? []);
       // Prefetch sparkline history only for expanded projects' pages — cheap if collapsed.
@@ -138,7 +141,7 @@ export default function ProjectsView() {
       for (const proj of data.projects ?? []) {
         if (!expandedProjects.has(proj.origin)) continue;
         for (const pg of proj.pages) {
-          const r = await fetch(`${client.baseUrl}/api/projects/history?url=${encodeURIComponent(pg.url)}&limit=40`);
+          const r = await fetch(client.requestUrl('/api/projects/history', { url: pg.url, limit: 40 }));
           const h = (await r.json()) as { rows: HistoryRow[] };
           map.set(pg.url, h.rows ?? []);
         }
@@ -159,10 +162,12 @@ export default function ProjectsView() {
     setRunningUrl(url);
     setError(null);
     try {
-      await client.startRun({ url, runs: 3, presets: 'psi', parallel: 1 });
-      setTimeout(() => { void loadProjects(); setRunningUrl(null); }, 90_000);
+      const { runId } = await client.startRun({ url, runs: 3, presets: 'psi', parallel: 1 });
+      await client.waitForRunCompletion(runId);
+      await loadProjects();
     } catch (err) {
       setError((err as Error).message);
+    } finally {
       setRunningUrl(null);
     }
   };
@@ -171,8 +176,10 @@ export default function ProjectsView() {
     setError(null);
     try {
       for (const pg of proj.pages) {
-        await client.startRun({ url: pg.url, runs: 3, presets: 'psi', parallel: 1 });
+        const { runId } = await client.startRun({ url: pg.url, runs: 3, presets: 'psi', parallel: 1 });
+        await client.waitForRunCompletion(runId);
       }
+      await loadProjects();
     } catch (err) {
       setError((err as Error).message);
     }
@@ -203,7 +210,7 @@ export default function ProjectsView() {
       const map = new Map(historyByUrl);
       for (const pg of proj.pages) {
         if (map.has(pg.url)) continue;
-        const r = await fetch(`${client.baseUrl}/api/projects/history?url=${encodeURIComponent(pg.url)}&limit=40`);
+        const r = await fetch(client.requestUrl('/api/projects/history', { url: pg.url, limit: 40 }));
         const h = (await r.json()) as { rows: HistoryRow[] };
         map.set(pg.url, h.rows ?? []);
       }
@@ -253,6 +260,7 @@ export default function ProjectsView() {
             <ProjectCard
               key={proj.origin}
               proj={proj}
+              client={client!}
               expanded={expandedProjects.has(proj.origin)}
               onToggle={() => toggleProject(proj.origin)}
               expandedPages={expandedPages}
@@ -280,6 +288,7 @@ function Panel({ children }: { children: React.ReactNode }) {
 
 interface ProjectCardProps {
   proj: ProjectGrouped;
+  client: AgentClient;
   expanded: boolean;
   onToggle: () => void;
   expandedPages: Set<string>;
@@ -293,7 +302,7 @@ interface ProjectCardProps {
   onAddPage: () => void;
 }
 
-function ProjectCard({ proj, expanded, onToggle, expandedPages, onTogglePage, historyByUrl, runningUrl, onRunPage, onRunAll, pageInput, setPageInput, onAddPage }: ProjectCardProps) {
+function ProjectCard({ proj, client, expanded, onToggle, expandedPages, onTogglePage, historyByUrl, runningUrl, onRunPage, onRunAll, pageInput, setPageInput, onAddPage }: ProjectCardProps) {
   const host = useMemo(() => { try { return new URL(proj.origin).host; } catch { return proj.origin; } }, [proj.origin]);
   return (
     <div className="border border-[var(--color-border)] bg-[var(--color-panel)] rounded-lg overflow-hidden">
@@ -385,7 +394,7 @@ function PageRowComp({ pg, expanded, onToggle, history, running, onRun }: { pg: 
         <div className="flex items-center justify-end gap-2">
           {(pg.reportCount ?? 0) > 0 && (
             <a
-              href={`http://127.0.0.1:7777/api/report?url=${encodeURIComponent(pg.url)}`}
+              href={client.reportUrl(pg.url)}
               target="_blank"
               rel="noreferrer"
               className="px-2 py-1 text-xs text-[var(--color-cyan)] hover:underline whitespace-nowrap"

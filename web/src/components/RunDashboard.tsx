@@ -107,12 +107,15 @@ export default function RunDashboard() {
   // Probe for the local agent on mount.
   useEffect(() => {
     void (async () => {
-      const probe = await probeAgent();
+      const pageUrl = new URL(window.location.href);
+      const preferredAgent = pageUrl.searchParams.get('agent') ?? undefined;
+      const token = pageUrl.searchParams.get('token') ?? undefined;
+      const probe = await probeAgent(undefined, { preferredUrl: preferredAgent, token });
       if (!probe) {
         setView('disconnected');
         return;
       }
-      const c = new AgentClient(probe.url);
+      const c = new AgentClient(probe.url, token);
       setClient(c);
       setHealth(probe.health);
       try {
@@ -179,6 +182,9 @@ export default function RunDashboard() {
       const unsubscribe = client.subscribe(id, (e: RunnerEvent) => handleEvent(e));
       // Cleanup on view change handled via ref-equivalent: store unsubscribe.
       (window as unknown as { __psiSwarmUnsub?: () => void }).__psiSwarmUnsub = unsubscribe;
+      void client.waitForRunCompletion(id)
+        .then(() => completeRun())
+        .catch((err) => setError((err as Error).message));
     } catch (err) {
       setError((err as Error).message);
       setView('form');
@@ -215,7 +221,6 @@ export default function RunDashboard() {
       setTotalDone(e.done);
     } else if (e.type === 'all-complete') {
       setFinished(true);
-      void completeRun();
     }
   };
 
