@@ -43,6 +43,28 @@ export interface NewRun {
   tag?: string;
 }
 
+export interface RunInsightRow {
+  run_id: number;
+  bottleneck_phase: string | null;
+  summary: string;
+  opportunities_json: string;
+  comparison_notes: string | null;
+  adapter: string;
+  artifact_path: string | null;
+  created_at: number;
+}
+
+export interface WatchlistEntry {
+  url: string;
+  label: string | null;
+  preset: string;
+  baseline_tag: string | null;
+  lcp_threshold_ms: number | null;
+  score_threshold: number | null;
+  stale_days: number;
+  added_at: number;
+}
+
 export class HistoryDB {
   private db: Database.Database;
 
@@ -87,6 +109,30 @@ export class HistoryDB {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS run_insights (
+        run_id INTEGER PRIMARY KEY,
+        bottleneck_phase TEXT,
+        summary TEXT NOT NULL,
+        opportunities_json TEXT NOT NULL DEFAULT '[]',
+        comparison_notes TEXT,
+        adapter TEXT NOT NULL,
+        artifact_path TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS watchlist (
+        url TEXT PRIMARY KEY,
+        label TEXT,
+        preset TEXT NOT NULL DEFAULT 'mobile-mid',
+        baseline_tag TEXT,
+        lcp_threshold_ms REAL,
+        score_threshold REAL,
+        stale_days INTEGER NOT NULL DEFAULT 7,
+        added_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_watchlist_added_at ON watchlist(added_at);
     `);
     this.migrateDomainRatingsNullable();
   }
@@ -297,6 +343,112 @@ export class HistoryDB {
    * Per-URL time series for sparklines. Returns up to `limit` recent runs across
    * any preset, grouped by run (preserves preset for client filtering).
    */
+  recentRunIds(url: string, preset: string, limit = 1): number[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id FROM runs WHERE url = ? AND preset = ? AND error IS NULL ORDER BY started_at DESC LIMIT ?`,
+      )
+      .all(url, preset, limit) as Array<{ id: number }>;
+    return rows.map((r) => r.id);
+  }
+
+  upsertRunInsight(input: {
+    runId: number;
+    bottleneckPhase?: string;
+    summary: string;
+    opportunities?: string[];
+    comparisonNotes?: string;
+    adapter: string;
+    artifactPath?: string;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT INTO run_insights (
+          run_id, bottleneck_phase, summary, opportunities_json, comparison_notes, adapter, artifact_path, created_at
+        ) VALUES (
+          @runId, @bottleneckPhase, @summary, @opportunitiesJson, @comparisonNotes, @adapter, @artifactPath, @createdAt
+        )
+        ON CONFLICT(run_id) DO UPDATE SET
+          bottleneck_phase = excluded.bottleneck_phase,
+          summary = excluded.summary,
+          opportunities_json = excluded.opportunities_json,
+          comparison_notes = excluded.comparison_notes,
+          adapter = excluded.adapter,
+          artifact_path = excluded.artifact_path,
+          created_at = excluded.created_at`,
+      )
+      .run({
+        runId: input.runId,
+        bottleneckPhase: input.bottleneckPhase ?? null,
+        summary: input.summary,
+        opportunitiesJson: JSON.stringify(input.opportunities ?? []),
+        comparisonNotes: input.comparisonNotes ?? null,
+        adapter: input.adapter,
+        artifactPath: input.artifactPath ?? null,
+        createdAt: Date.now(),
+      });
+  }
+
+  runInsightsForUrl(url: string, limit = 20): Array<RunInsightRow & { preset: string; started_at: number }> {
+    return this.db
+      .prepare(
+        `SELECT ri.*, r.preset, r.started_at
+         FROM run_insights ri
+         JOIN runs r ON r.id = ri.run_id
+         WHERE r.url = ?
+         ORDER BY r.started_at DESC
+         LIMIT ?`,
+      )
+      .all(url, limit) as Array<RunInsightRow & { preset: string; started_at: number }>;
+  }
+
+  addWatchlist(entry: {
+    url: string;
+    label?: string;
+    preset?: string;
+    baselineTag?: string;
+    lcpThresholdMs?: number;
+    scoreThreshold?: number;
+    staleDays?: number;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT INTO watchlist (
+          url, label, preset, baseline_tag, lcp_threshold_ms, score_threshold, stale_days, added_at
+        ) VALUES (
+          @url, @label, @preset, @baselineTag, @lcpThresholdMs, @scoreThreshold, @staleDays, @addedAt
+        )
+        ON CONFLICT(url) DO UPDATE SET
+          label = excluded.label,
+          preset = excluded.preset,
+          baseline_tag = excluded.baseline_tag,
+          lcp_threshold_ms = excluded.lcp_threshold_ms,
+          score_threshold = excluded.score_threshold,
+          stale_days = excluded.stale_days`,
+      )
+      .run({
+        url: entry.url,
+        label: entry.label ?? null,
+        preset: entry.preset ?? 'mobile-mid',
+        baselineTag: entry.baselineTag ?? null,
+        lcpThresholdMs: entry.lcpThresholdMs ?? null,
+        scoreThreshold: entry.scoreThreshold ?? null,
+        staleDays: entry.staleDays ?? 7,
+        addedAt: Date.now(),
+      });
+  }
+
+  removeWatchlist(url: string): boolean {
+    const result = this.db.prepare(`DELETE FROM watchlist WHERE url = ?`).run(url);
+    return result.changes > 0;
+  }
+
+  listWatchlist(): WatchlistEntry[] {
+    return this.db
+      .prepare(`SELECT * FROM watchlist ORDER BY added_at DESC`)
+      .all() as WatchlistEntry[];
+  }
+
   history(url: string, limit = 60): Array<{
     started_at: number;
     preset: string;

@@ -1,0 +1,31 @@
+---
+import '../styles/global.css';
+import WatchlistView from '../components/WatchlistView.tsx';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>psi-swarm · watchlist</title>
+  </head>
+  <body class="min-h-screen">
+    <main class="max-w-5xl mx-auto px-6 py-10">
+      <header class="mb-8">
+        <h1 class="text-3xl font-bold tracking-tight">
+          <span class="text-[var(--color-cyan)]">psi</span>-swarm · watchlist
+        </h1>
+        <p class="text-[var(--color-dim)] mt-1 text-sm">
+          Local regression queue over SQLite history — compare latest runs against a baseline tag or prior swarm.
+        </p>
+        <nav class="text-[var(--color-dim)] mt-3 text-xs flex flex-wrap gap-4">
+          <a href="./" class="text-[var(--color-cyan)] hover:underline">← run dashboard</a>
+          <a href="./projects/" class="hover:text-[var(--color-text)]">projects</a>
+          <a href="./gallery/" class="hover:text-[var(--color-text)]">demo gallery</a>
+        </nav>
+      </header>
+      <WatchlistView client:load />
+    </main>
+  </body>
+</html>

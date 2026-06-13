@@ -1,0 +1,32 @@
+---
+import '../styles/global.css';
+import GalleryView from '../components/GalleryView.tsx';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>psi-swarm · demo gallery</title>
+    <meta name="description" content="Curated before/after psi-swarm fixtures that show what good comparison output looks like." />
+  </head>
+  <body class="min-h-screen">
+    <main class="max-w-5xl mx-auto px-6 py-10">
+      <header class="mb-8">
+        <h1 class="text-3xl font-bold tracking-tight">
+          <span class="text-[var(--color-cyan)]">psi</span>-swarm · demo gallery
+        </h1>
+        <p class="text-[var(--color-dim)] mt-1 text-sm">
+          Curated before/after stories rendered from static fixtures — no local agent required.
+        </p>
+        <nav class="text-[var(--color-dim)] mt-3 text-xs flex flex-wrap gap-4">
+          <a href="./" class="text-[var(--color-cyan)] hover:underline">← run dashboard</a>
+          <a href="./projects/" class="hover:text-[var(--color-text)]">projects</a>
+          <a href="./watchlist/" class="hover:text-[var(--color-text)]">watchlist</a>
+        </nav>
+      </header>
+      <GalleryView client:load />
+    </main>
+  </body>
+</html>

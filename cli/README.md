@@ -31,11 +31,14 @@ psi-swarm run <url> [options]
   --no-suggest          Skip post-run link suggestions
   --no-crux             Skip CrUX field-data lookup (needs CRUX_API_KEY)
   --no-ahrefs           Skip Ahrefs Domain Rating (custom domains only)
+  --no-insight          Skip trace-insight export and derived diagnosis
+  --insight-baseline <tag>  Compare insight against a tagged baseline swarm
 
 psi-swarm presets             # list available presets and groups
 psi-swarm history <url>       # show recent history (formatted as a report)
 psi-swarm urls                # list all URLs seen
 psi-swarm compare <url> --baseline <tag> --candidate <tag> [--pct p75]
+psi-swarm watch list|add|remove|check   # local regression watchlist
 psi-swarm discover <url>      # list same-origin links from a page (static only)
 ```
 

@@ -16,6 +16,9 @@ import { streamReasoning, probeLocalAi, type ReasonBackend } from './reason.js';
 import { domainRatingsForOrigins } from './ahrefs.js';
 import { isCloudflarePlatformHost, hostnameFromUrl } from './domain.js';
 import { createDomainRatingScheduler } from './domain-rating-scheduler.js';
+import { exportSwarmArtifacts } from './artifacts.js';
+import { deriveTraceInsights } from './trace-insight.js';
+import { evaluateWatchlist, summarizeWatchlist } from './watchlist.js';
 
 interface RunRecord {
   id: string;
@@ -34,7 +37,7 @@ interface RunRecord {
 }
 
 const runs = new Map<string, RunRecord>();
-const VERSION = '0.2.0';
+const VERSION = '0.4.0';
 
 // Report registry: URL → file paths (newest first), built from any directory
 // where psi-swarm has written --output html files.
@@ -112,7 +115,7 @@ function send(res: ServerResponse, status: number, body: unknown, origin?: strin
   if (origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   }
   res.end(JSON.stringify(body));
 }
@@ -183,6 +186,10 @@ function startRun(record: RunRecord): void {
             tag: record.tag,
           });
         }
+        const artifactPaths = exportSwarmArtifacts(record.url, results, { tag: record.tag });
+        void deriveTraceInsights(db, record.url, results, { tag: record.tag, artifactPaths }).catch(() => {
+          /* optional insight path */
+        });
         db.close();
       } catch {
         /* don't fail the run on persistence error */
@@ -295,7 +302,7 @@ export function createAgentServer(opts: ServeOptions): { listen: () => Promise<v
       res.statusCode = 204;
       res.setHeader('Access-Control-Allow-Origin', opts.origin);
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
       res.setHeader('Access-Control-Max-Age', '600');
       res.end();
       return;
@@ -676,6 +683,98 @@ export function createAgentServer(opts: ServeOptions): { listen: () => Promise<v
           }
         }
         return send(res, 200, { byPreset }, opts.origin);
+      }
+
+      // GET /api/watchlist
+      if (req.method === 'GET' && url.pathname === '/api/watchlist') {
+        const db = new HistoryDB();
+        try {
+          const entries = db.listWatchlist();
+          const queue = evaluateWatchlist(db);
+          const refreshedAt = db.getMeta('watchlist_refreshed_at');
+          return send(
+            res,
+            200,
+            {
+              entries,
+              queue,
+              summary: summarizeWatchlist(queue),
+              refreshedAt: refreshedAt ? Number(refreshedAt) : null,
+            },
+            opts.origin,
+          );
+        } finally {
+          db.close();
+        }
+      }
+
+      // POST /api/watchlist
+      if (req.method === 'POST' && url.pathname === '/api/watchlist') {
+        const body = await readJson<{
+          url: string;
+          label?: string;
+          preset?: string;
+          baselineTag?: string;
+          lcpThresholdMs?: number;
+          scoreThreshold?: number;
+          staleDays?: number;
+        }>(req);
+        if (!body.url) return send(res, 400, { error: 'url required' }, opts.origin);
+        const db = new HistoryDB();
+        db.addWatchlist(body);
+        const queue = evaluateWatchlist(db);
+        db.close();
+        return send(res, 200, { ok: true, queue, summary: summarizeWatchlist(queue) }, opts.origin);
+      }
+
+      // DELETE /api/watchlist?url=
+      if (req.method === 'DELETE' && url.pathname === '/api/watchlist') {
+        const target = url.searchParams.get('url');
+        if (!target) return send(res, 400, { error: 'url required' }, opts.origin);
+        const db = new HistoryDB();
+        const removed = db.removeWatchlist(target);
+        const queue = evaluateWatchlist(db);
+        db.close();
+        return send(res, 200, { ok: removed, queue, summary: summarizeWatchlist(queue) }, opts.origin);
+      }
+
+      // POST /api/watchlist/refresh
+      if (req.method === 'POST' && url.pathname === '/api/watchlist/refresh') {
+        const db = new HistoryDB();
+        const refreshedAt = Date.now();
+        db.setMeta('watchlist_refreshed_at', String(refreshedAt));
+        const queue = evaluateWatchlist(db, refreshedAt);
+        db.close();
+        return send(res, 200, { refreshedAt, queue, summary: summarizeWatchlist(queue) }, opts.origin);
+      }
+
+      // GET /api/insights?url=
+      if (req.method === 'GET' && url.pathname === '/api/insights') {
+        const target = url.searchParams.get('url');
+        if (!target) return send(res, 400, { error: 'url required' }, opts.origin);
+        const db = new HistoryDB();
+        const rows = db.runInsightsForUrl(target);
+        db.close();
+        return send(
+          res,
+          200,
+          {
+            url: target,
+            insights: rows.map((row) => ({
+              runId: row.run_id,
+              preset: row.preset,
+              startedAt: row.started_at,
+              bottleneckPhase: row.bottleneck_phase,
+              summary: row.summary,
+              opportunities: JSON.parse(row.opportunities_json) as string[],
+              comparisonNotes: row.comparison_notes,
+              adapter: row.adapter,
+              artifactPath: row.artifact_path,
+              createdAt: row.created_at,
+            })),
+          },
+          opts.origin,
+        );
       }
 
       return send(res, 404, { error: 'not found', path: url.pathname }, opts.origin);

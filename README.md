@@ -104,6 +104,30 @@ For **Codex** (which uses `~/.codex/AGENTS.md` instead of skills), open `.claude
 
 See [`cli/README.md`](./cli/README.md) for every command and option.
 
+### Demo gallery (no agent required)
+
+Open [`/gallery`](http://localhost:4321/gallery) after `npm run web`. It renders three curated before/after fixtures so new users can see what comparison output looks like without running a swarm first.
+
+### Local regression watchlist
+
+Track critical URLs in SQLite and surface a compact queue of regressions, improvements, and stale pages:
+
+```bash
+npm run cli -- watch add https://example.com/ --label "Home" --baseline-tag before-deploy
+npm run cli -- watch list
+npm run cli -- watch check
+```
+
+The web UI exposes the same queue at [`/watchlist`](http://localhost:4321/watchlist) when `psi-swarm serve` is running.
+
+### Trace insight adapter
+
+Every saved swarm exports Lighthouse capture bundles to `~/.psi-swarm/artifacts/` and stores a derived diagnosis beside the history row (dominant LCP phase, top opportunities, optional baseline comparison notes). Disable with `--no-insight`, or plug in an external adapter at `~/.psi-swarm/adapters/trace-insight.mjs`.
+
+```bash
+npm run cli -- run https://example.com --tag after-deploy --insight-baseline before-deploy
+```
+
 ## What's different from PageSpeed Insights / Lighthouse alone
 
 - **Distribution, not a point.** Run N times, get p50/p75/p90/p99 + min/max/σ. PSI gives you one number per run.
@@ -111,6 +135,9 @@ See [`cli/README.md`](./cli/README.md) for every command and option.
 - **Adaptive parallelism.** `--parallel auto` runs presets concurrently, capped at safe limits based on your machine.
 - **SPA-aware link discovery.** Suggests "other pages you should test" using static HTML, sitemap.xml, Next.js `_buildManifest`, React Router patterns in the bundle, and a generic string-harvest fallback.
 - **Local history.** SQLite at `~/.psi-swarm/history.db`. Tag swarms (`--tag before-deploy`) and `compare` p75/p99 across deploys.
+- **Regression watchlist.** Mark high-value URLs and get a local queue of meaningful deltas without cloud scheduling.
+- **Trace insight.** Optional derived diagnosis stored next to each swarm (builtin adapter by default; external adapter hook supported).
+- **Demo gallery.** Static before/after fixtures in the web UI for consistent demos and docs.
 - **Beautiful live UI** — terminal (Ink) or browser (Astro + React + Tailwind 4), same data model.
 
 ## Honest about what it is

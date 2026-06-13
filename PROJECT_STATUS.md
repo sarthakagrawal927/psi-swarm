@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-06-10
+Last updated: 2026-06-13 (v0.4.0)
 
 ## Current Scope
 
@@ -8,7 +8,7 @@ psi-swarm is a local-first website performance tracker. It measures Web Vitals a
 
 ## Done
 
-- Node CLI supports `run`, `discover`, `serve`, `history`, and `compare` workflows.
+- Node CLI supports `run`, `discover`, `serve`, `history`, `compare`, and `watch` workflows.
 - Headless Chrome and Lighthouse runs produce percentile tables, LCP element identification, ranked opportunities, and static HTML reports.
 - Local browser UI exists as an Astro + React + Tailwind controller for the CLI `serve` agent.
 - Compute stays local; the browser UI talks to the local agent through CORS/SSE.
@@ -24,14 +24,20 @@ psi-swarm is a local-first website performance tracker. It measures Web Vitals a
   hostnames (`*.pages.dev`, `*.workers.dev`) are skipped because DR is not
   meaningful on shared CF subdomains. Ratings persist in SQLite; `serve` refreshes
   them weekly when idle (no active swarms), probed hourly.
+- **Trace insight adapter (PRD shipped):** saved swarms export Lighthouse bundles to
+  `~/.psi-swarm/artifacts/`, derive a builtin diagnosis into `run_insights`, render
+  it in CLI/HTML reports, and expose `/api/insights`. External adapter hook:
+  `~/.psi-swarm/adapters/trace-insight.mjs` or `PSI_TRACE_INSIGHT_ADAPTER`.
+- **Shareable demo gallery (PRD shipped):** static fixtures and `/gallery` route in
+  the web app — works without the local agent.
+- **Local regression watchlist (PRD shipped):** `watchlist` table, `psi-swarm watch`
+  subcommands, `/api/watchlist` endpoints, and `/watchlist` web UI.
 
 ## Planned Next
 
 1. Keep Node 22 LTS as the supported path until the Lighthouse 12 / Node 24 trace-mark issue is resolved.
 2. Improve the local web controller so users can run, compare, and inspect swarms without dropping to the CLI.
-3. Add an optional trace-insight adapter that stores LLM-readable diagnosis beside existing percentile history. See [docs/prds/trace-insight-adapter.md](docs/prds/trace-insight-adapter.md).
-4. Add clearer public/demo examples that compare real product pages before and after performance work. See [docs/prds/shareable-demo-gallery.md](docs/prds/shareable-demo-gallery.md).
-5. Add a local regression watchlist so the highest-value URLs can be monitored and compared from the local history store. See [docs/prds/local-regression-watchlist.md](docs/prds/local-regression-watchlist.md).
+3. Validate an external trace-insight adapter against a small set of known regressions (Chrome DevTools MCP path).
 
 ## Deferred / Parked
 

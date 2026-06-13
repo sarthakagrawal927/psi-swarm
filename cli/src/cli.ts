@@ -20,6 +20,9 @@ import { streamReasoning, probeLocalAi, type ReasonBackend } from './reason.js';
 import { renderHtmlReport } from './html-report.js';
 import { writeFileSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
+import { exportSwarmArtifacts } from './artifacts.js';
+import { deriveTraceInsights } from './trace-insight.js';
+import { evaluateWatchlist, summarizeWatchlist } from './watchlist.js';
 
 const program = new Command();
 
@@ -28,7 +31,7 @@ program
   .description(
     'Run Lighthouse N times across realistic presets. Get p50/p75/p90/p99 of your Web Vitals instead of a single noisy number.',
   )
-  .version('0.1.0');
+  .version('0.4.0');
 
 program
   .command('run')
@@ -52,7 +55,8 @@ program
   .option('--no-crux', 'Skip the CrUX real-user p75 lookup')
   .option('--no-ahrefs', 'Skip Ahrefs Domain Rating lookup (custom domains only)')
   .option('--output <fmt>', 'Also write a report file: html', undefined)
-  .option('--output-path <file>', 'Override the report output path')
+  .option('--no-insight', 'Skip trace-insight export and derived diagnosis')
+  .option('--insight-baseline <tag>', 'Compare derived insight against a tagged baseline swarm')
   .action(async (url: string, opts) => {
     let presets: Preset[];
     try {
@@ -106,6 +110,7 @@ program
       process.exit(1);
     }
 
+    let traceInsights;
     if (opts.save !== false) {
       const db = new HistoryDB();
       for (const r of results) {
@@ -119,7 +124,18 @@ program
           tag: opts.tag,
         });
       }
+
+      if (opts.insight !== false) {
+        const artifactPaths = exportSwarmArtifacts(url, results, { tag: opts.tag });
+        traceInsights = await deriveTraceInsights(db, url, results, {
+          tag: opts.tag,
+          artifactPaths,
+          baselineTag: opts.insightBaseline,
+        });
+      }
       db.close();
+    } else if (opts.insight !== false) {
+      exportSwarmArtifacts(url, results, { tag: opts.tag });
     }
 
     // Pre-render side-channel: fetch CrUX (mobile + desktop) in parallel.
@@ -154,7 +170,7 @@ program
         trafficProfile = { name: opts.profile, weights };
       }
     }
-    console.log('\n' + renderSwarmReport(url, results, elapsed, { cruxByFormFactor, trafficProfile, domainRating }));
+    console.log('\n' + renderSwarmReport(url, results, elapsed, { cruxByFormFactor, trafficProfile, domainRating, traceInsights }));
 
     let reasoningCapture: { text: string; backend?: string; model?: string; durationMs?: number } | undefined;
     if (opts.reason === true) {
@@ -173,6 +189,7 @@ program
         cruxByFormFactor,
         domainRating,
         reasoning: reasoningCapture,
+        traceInsights,
       });
       writeFileSync(outPath, html, 'utf-8');
       console.log('\n' + chalk.dim('Wrote HTML report → ') + chalk.cyan(outPath));
@@ -593,6 +610,120 @@ program
     }
     console.log(t.toString());
   });
+
+program
+  .command('watch')
+  .description('Manage the local regression watchlist')
+  .addCommand(
+    new Command('list')
+      .description('Show watched URLs and the current queue')
+      .action(() => {
+        const db = new HistoryDB();
+        const entries = db.listWatchlist();
+        const queue = evaluateWatchlist(db);
+        db.close();
+        if (entries.length === 0) {
+          console.log(chalk.dim('Watchlist is empty. Add a URL with: psi-swarm watch add <url>'));
+          return;
+        }
+        const summary = summarizeWatchlist(queue);
+        console.log(
+          boxen(
+            `${chalk.bold('Watchlist queue')}\n` +
+              `${summary.regressed} regressed · ${summary.improved} improved · ${summary.stale} stale · ${summary.missing} missing · ${summary.stable} stable`,
+            { padding: 1, borderColor: 'cyan', borderStyle: 'round' },
+          ),
+        );
+        const t = new Table({
+          head: [chalk.bold('Status'), chalk.bold('URL'), chalk.bold('Preset'), chalk.bold('Delta')],
+          style: { head: [], border: ['gray'] },
+          wordWrap: true,
+        });
+        for (const item of queue) {
+          const statusColor =
+            item.status === 'regressed'
+              ? chalk.red
+              : item.status === 'improved'
+                ? chalk.green
+                : item.status === 'stale' || item.status === 'missing'
+                  ? chalk.yellow
+                  : chalk.dim;
+          t.push([
+            statusColor(item.status),
+            item.label ? `${item.label}\n${chalk.dim(item.url)}` : item.url,
+            item.preset,
+            item.message,
+          ]);
+        }
+        console.log(t.toString());
+      }),
+  )
+  .addCommand(
+    new Command('add')
+      .description('Add or update a watched URL')
+      .argument('<url>', 'URL to watch')
+      .option('-l, --label <text>', 'Short label for the queue')
+      .option('-p, --preset <name>', 'Preset to compare', 'mobile-mid')
+      .option('--baseline-tag <tag>', 'Tagged baseline swarm to compare against')
+      .option('--lcp-threshold-ms <n>', 'LCP regression threshold in ms', parseFloat)
+      .option('--score-threshold <n>', 'Perf score regression threshold', parseFloat)
+      .option('--stale-days <n>', 'Days before a page is marked stale', '7')
+      .action((url: string, opts) => {
+        const db = new HistoryDB();
+        db.addWatchlist({
+          url,
+          label: opts.label,
+          preset: opts.preset,
+          baselineTag: opts.baselineTag,
+          lcpThresholdMs: opts.lcpThresholdMs,
+          scoreThreshold: opts.scoreThreshold,
+          staleDays: parseInt(opts.staleDays, 10),
+        });
+        db.close();
+        console.log(chalk.green(`Watching ${url}`) + chalk.dim(` · preset=${opts.preset}`));
+      }),
+  )
+  .addCommand(
+    new Command('remove')
+      .description('Remove a URL from the watchlist')
+      .argument('<url>', 'URL to remove')
+      .action((url: string) => {
+        const db = new HistoryDB();
+        const removed = db.removeWatchlist(url);
+        db.close();
+        if (!removed) {
+          console.log(chalk.yellow(`Not on watchlist: ${url}`));
+          return;
+        }
+        console.log(chalk.green(`Removed ${url} from watchlist`));
+      }),
+  )
+  .addCommand(
+    new Command('check')
+      .description('Refresh and print the watchlist queue')
+      .action(() => {
+        const db = new HistoryDB();
+        db.setMeta('watchlist_refreshed_at', String(Date.now()));
+        const queue = evaluateWatchlist(db);
+        db.close();
+        const summary = summarizeWatchlist(queue);
+        console.log(
+          chalk.cyan.bold('Watchlist check') +
+            chalk.dim(` · ${summary.regressed} regressed · ${summary.improved} improved · ${summary.stale} stale`),
+        );
+        for (const item of queue) {
+          const color =
+            item.status === 'regressed'
+              ? chalk.red
+              : item.status === 'improved'
+                ? chalk.green
+                : item.status === 'stale' || item.status === 'missing'
+                  ? chalk.yellow
+                  : chalk.dim;
+          console.log(color(`  ${item.status.padEnd(9)} ${item.url}  ${item.message}`));
+        }
+      }),
+  );
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(chalk.red(err.message));

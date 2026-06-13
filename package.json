@@ -1,6 +1,6 @@
 {
   "name": "psi-swarm-monorepo",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Lighthouse, run many times across realistic device/network presets. See the p50/p75/p90/p99 of your Web Vitals, not one noisy point.",
   "workspaces": [

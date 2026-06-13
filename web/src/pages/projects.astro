@@ -19,8 +19,10 @@ import ProjectsView from '../components/ProjectsView.tsx';
         <p class="text-[var(--color-dim)] mt-1 text-sm">
           Tracked URLs from your local SQLite history. Latest performance, recent trend, click to drill into the full run history.
         </p>
-        <p class="text-[var(--color-dim)] mt-3 text-xs">
+        <p class="text-[var(--color-dim)] mt-3 text-xs flex flex-wrap gap-4">
           <a href="./" class="text-[var(--color-cyan)] hover:underline">← single-URL dashboard</a>
+          <a href="./watchlist/" class="hover:text-[var(--color-text)]">watchlist</a>
+          <a href="./gallery/" class="hover:text-[var(--color-text)]">demo gallery</a>
         </p>
       </header>
       <ProjectsView client:load />

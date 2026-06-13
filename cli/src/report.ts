@@ -6,6 +6,7 @@ import { computeStats, type Stats } from './stats.js';
 import { diagnosePreset, rankOpportunities, formatAggregatedAudit, type Diagnosis } from './diagnose.js';
 import type { CruxRecord } from './crux.js';
 import type { DomainRatingResult } from './ahrefs.js';
+import type { TraceInsightRecord } from './trace-insight.js';
 
 type MetricKey =
   | 'lcp'
@@ -177,6 +178,7 @@ export interface RenderOptions {
   };
   trafficProfile?: { name: string; weights: Record<string, number> };
   domainRating?: DomainRatingResult | null;
+  traceInsights?: TraceInsightRecord[];
 }
 
 export function renderSwarmReport(
@@ -250,6 +252,10 @@ export function renderSwarmReport(
     if (!anyAudits) continue;
     const diag = diagnosePreset(url, presetName, rs as never, rs[0].preset.label, rs[0].preset.formFactor);
     sections.push(renderOpportunities(diag));
+  }
+
+  if (renderOpts.traceInsights && renderOpts.traceInsights.length > 0) {
+    sections.push(renderTraceInsights(renderOpts.traceInsights));
   }
 
   sections.push(
@@ -433,6 +439,20 @@ function renderDomainRating(rec?: DomainRatingResult | null): string {
     chalk.dim('  ·  DR: ') +
     color.bold(rec.rating.toFixed(1))
   );
+}
+
+function renderTraceInsights(insights: TraceInsightRecord[]): string {
+  const lines: string[] = [];
+  lines.push(chalk.cyan.bold('Trace insight') + chalk.dim('  · derived diagnosis beside percentile history'));
+  for (const i of insights) {
+    lines.push(chalk.bold(`  ${i.preset}`) + chalk.dim(` (${i.adapter})`));
+    lines.push(chalk.dim('    ') + i.summary);
+    if (i.comparisonNotes) lines.push(chalk.yellow('    ' + i.comparisonNotes));
+    if (i.opportunities.length > 0) {
+      lines.push(chalk.dim('    opportunities: ') + i.opportunities.slice(0, 3).join(chalk.dim(' · ')));
+    }
+  }
+  return lines.join('\n');
 }
 
 function renderOpportunities(d: Diagnosis): string {

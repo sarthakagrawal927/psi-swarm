@@ -1,6 +1,6 @@
 {
   "name": "psi-swarm",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "description": "Run Lighthouse N times across realistic device/network presets. Get p50/p75/p90/p99 of your Web Vitals instead of a single noisy number.",
   "type": "module",
   "bin": {
