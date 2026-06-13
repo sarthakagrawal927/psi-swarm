@@ -57,6 +57,15 @@ let reportRegistry: Map<string, ReportEntry[]> | null = null;
 let reportRegistryBuiltAt = 0;
 const REPORT_REGISTRY_TTL_MS = 30_000;
 
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
 function buildReportRegistry(): Map<string, ReportEntry[]> {
   const registry = new Map<string, ReportEntry[]>();
   for (const dir of REPORT_DIRS) {
@@ -75,7 +84,7 @@ function buildReportRegistry(): Map<string, ReportEntry[]> {
         // Prefer explicit meta, fall back to the title's "psi-swarm report · <url>" pattern.
         const metaMatch = head.match(META_URL_RE);
         const titleMatch = !metaMatch ? head.match(TITLE_URL_RE) : null;
-        const url = metaMatch ? metaMatch[1] : titleMatch ? titleMatch[1].trim() : null;
+        const url = metaMatch ? decodeHtmlEntities(metaMatch[1]) : titleMatch ? decodeHtmlEntities(titleMatch[1].trim()) : null;
         if (!url) continue;
         const genMatch = head.match(META_GENERATED_RE);
         const generatedAt = genMatch ? genMatch[1] : undefined;
