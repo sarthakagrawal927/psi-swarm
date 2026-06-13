@@ -144,6 +144,11 @@ export async function streamReasoning(
   return streamOpenAi(userMessage, opts, startedAt);
 }
 
+function normalizeModelSpec(spec: string | undefined): string | undefined {
+  if (!spec || spec === 'auto') return undefined;
+  return spec;
+}
+
 function parseExtraJson(raw: string | undefined): Record<string, unknown> | undefined {
   if (!raw) return undefined;
   try {
@@ -163,7 +168,7 @@ async function streamOpenAi(userMessage: string, opts: ReasonOptions, startedAt:
   }
   // Base URL convention: include /v1, e.g. https://api.openai.com/v1
   const baseUrl = (opts.baseUrl ?? process.env.OPENAI_BASE_URL ?? DEFAULT_OPENAI_BASE).replace(/\/$/, '');
-  const model = opts.model ?? process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
+  const model = normalizeModelSpec(opts.model) ?? normalizeModelSpec(process.env.OPENAI_MODEL) ?? 'gpt-4o-mini';
   const extraBody = { ...parseExtraJson(process.env.OPENAI_EXTRA_BODY), ...(opts.extraBody ?? {}) };
   const extraHeaders = { ...parseExtraJson(process.env.OPENAI_EXTRA_HEADERS), ...(opts.extraHeaders ?? {}) } as Record<string, string>;
 
