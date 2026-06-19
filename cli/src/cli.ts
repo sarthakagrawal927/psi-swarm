@@ -24,6 +24,7 @@ import { homedir } from 'node:os';
 import { exportSwarmArtifacts } from './artifacts.js';
 import { deriveTraceInsights } from './trace-insight.js';
 import { evaluateWatchlist, summarizeWatchlist } from './watchlist.js';
+import { deviceLogin, verifyAuth, resolveToken, resolveBase, saveConfig, loadConfig } from './saasmaker.js';
 
 const program = new Command();
 
@@ -727,6 +728,42 @@ program
         }
       }),
   );
+
+program
+  .command('connect')
+  .description('Authenticate this machine to SaaS Maker (device flow). psi-swarm works fine without it.')
+  .option('--token <token>', 'set an sm_ token directly instead of the browser device flow')
+  .option('--base <url>', 'SaaS Maker API base URL (default https://api.sassmaker.com)')
+  .action(async (opts: { token?: string; base?: string }) => {
+    const base = opts.base || resolveBase();
+    if (opts.base) saveConfig({ ...loadConfig(), base });
+    if (opts.token) {
+      saveConfig({ ...loadConfig(), token: opts.token, base });
+    } else {
+      const spinner = ora('Requesting authorization…').start();
+      await deviceLogin(base, (url) => {
+        spinner.stop();
+        console.log(boxen(`Approve this machine in your browser:\n\n${chalk.cyan(url)}`, { padding: 1, borderColor: 'cyan' }));
+        ora('Waiting for approval…').start();
+      });
+    }
+    const v = await verifyAuth();
+    if (v.ok) console.log(chalk.green(`✓ Connected to SaaS Maker — ${v.projects.length} project(s) visible.`));
+    else console.error(chalk.red(`Auth check failed (status ${v.status}). Token may be invalid.`));
+  });
+
+program
+  .command('whoami')
+  .description('Show SaaS Maker connection status')
+  .action(async () => {
+    if (!resolveToken()) {
+      console.log(chalk.dim('Not connected. Run: psi-swarm connect'));
+      return;
+    }
+    const v = await verifyAuth();
+    if (v.ok) console.log(chalk.green(`✓ Connected — ${v.projects.length} project(s): ${v.projects.map((p) => p.slug || p.name).join(', ') || '(none)'}`));
+    else console.log(chalk.red(`Token present but invalid (status ${v.status}). Re-run: psi-swarm connect`));
+  });
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(chalk.red(err.message));
