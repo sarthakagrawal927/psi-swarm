@@ -8,14 +8,14 @@
     "web"
   ],
   "scripts": {
-    "setup": "npm install && npm --workspace cli run build",
+    "setup": "pnpm install && pnpm --filter psi-swarm run build",
     "cli": "node cli/dist/cli.js",
     "run": "node cli/dist/cli.js run",
     "serve": "node cli/dist/cli.js serve",
-    "web": "npm --workspace web run dev",
-    "build:cli": "npm --workspace cli run build",
-    "build:web": "npm --workspace web run build",
-    "dev:cli": "npm --workspace cli run dev",
+    "web": "pnpm --filter psi-swarm-web run dev",
+    "build:cli": "pnpm --filter psi-swarm run build",
+    "build:web": "pnpm --filter psi-swarm-web run build",
+    "dev:cli": "pnpm --filter psi-swarm run dev",
     "install:skill": "node scripts/install-skill.mjs"
   },
   "engines": {
