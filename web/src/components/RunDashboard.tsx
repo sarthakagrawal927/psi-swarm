@@ -355,11 +355,7 @@ export default function RunDashboard() {
 }
 
 function ConnectingPanel() {
-  return (
-    <div className="border border-[var(--color-border)] bg-[var(--color-panel)] rounded-lg p-8 text-center">
-      <p className="text-[var(--color-dim)]">Looking for a local psi-swarm agent…</p>
-    </div>
-  );
+  return <div className="min-h-24" aria-hidden />;
 }
 
 function DisconnectedPanel({ onRetry, error }: { onRetry: () => void; error: string | null }) {
@@ -369,15 +365,20 @@ function DisconnectedPanel({ onRetry, error }: { onRetry: () => void; error: str
       <p className="text-[var(--color-dim)] text-sm">
         psi-swarm runs Lighthouse on your machine. Start the local agent in a terminal:
       </p>
-      <pre className="bg-[var(--color-bg)] border border-[var(--color-border)] rounded p-3 text-sm overflow-x-auto">
-        <code className="text-[var(--color-cyan)]">
-          {`# install
+      <details className="text-sm">
+        <summary className="cursor-pointer text-[var(--color-dim)] hover:text-[var(--color-text)]">
+          Setup instructions
+        </summary>
+        <pre className="mt-3 bg-[var(--color-bg)] border border-[var(--color-border)] rounded p-3 text-sm overflow-x-auto">
+          <code className="text-[var(--color-cyan)]">
+            {`# install
 npm install -g psi-swarm
 
 # run the agent (in any terminal)
 psi-swarm serve --origin http://localhost:4321`}
-        </code>
-      </pre>
+          </code>
+        </pre>
+      </details>
       <p className="text-[var(--color-dim)] text-xs">
         Compute happens on your machine. The browser is just the UI. {error ? `Last error: ${error}` : ''}
       </p>
