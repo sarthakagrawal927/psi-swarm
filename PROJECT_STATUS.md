@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-06-13 (v0.4.0)
+Last updated: 2026-06-20 (v0.4.0)
 
 ## Current Scope
 
@@ -32,6 +32,7 @@ psi-swarm is a local-first website performance tracker. It measures Web Vitals a
   the web app — works without the local agent.
 - **Local regression watchlist (PRD shipped):** `watchlist` table, `psi-swarm watch`
   subcommands, `/api/watchlist` endpoints, and `/watchlist` web UI.
+- **SaaS Maker auth hub (2026-06-20):** CLI device-flow helper (`connect` / `whoami`) for fleet Cockpit token storage.
 
 ## Planned Next
 
