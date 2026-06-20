@@ -33,6 +33,7 @@ psi-swarm is a local-first website performance tracker. It measures Web Vitals a
 - **Local regression watchlist (PRD shipped):** `watchlist` table, `psi-swarm watch`
   subcommands, `/api/watchlist` endpoints, and `/watchlist` web UI.
 - **SaaS Maker auth hub (2026-06-20):** CLI device-flow helper (`connect` / `whoami`) for fleet Cockpit token storage.
+- **pnpm workspace (2026-06-20):** npm workspaces migrated to pnpm; root scripts/docs use pnpm as canonical package manager.
 
 ## Planned Next
 
