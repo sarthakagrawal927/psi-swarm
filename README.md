@@ -4,6 +4,8 @@
 
 A single PageSpeed Insights run tells you almost nothing — two runs on the same URL can disagree by 30%+ on LCP because of network jitter, CPU contention, third-party scripts, and server-side variance. `psi-swarm` runs the same audit many times across a matrix of realistic conditions and reports the **shape** of the distribution, not just one point.
 
+**Free, open source (MIT), fully local.** No account, no signup, no telemetry — nothing leaves your machine. Clone it, run it, own it.
+
 ## Two ways to use it
 
 ```
