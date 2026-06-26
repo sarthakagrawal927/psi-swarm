@@ -3,6 +3,9 @@ name: Deploy psi-swarm-web to Cloudflare Pages
 #   pnpm --filter psi-swarm-web run build && wrangler pages deploy web/dist --project-name=psi-swarm-web
 # CI deploy added 2026-06-26 — auto-deploys on push to main (web changes) + manual dispatch.
 # Before this, psi-swarm had no deploy automation, so merged web fixes never reached the live site.
+# REQUIRES repo/org secrets CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID. This repo lives on a
+# personal account (not the sarthak-fleet org), so org secrets do NOT apply until it is either
+# transferred into the org or given repo-level secrets — see PROJECT_STATUS.md "Blocked".
 on:
   workflow_dispatch:
   push:

@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-06-20 (v0.4.0)
+Last updated: 2026-06-26 (v0.4.0)
 
 ## Current Scope
 
@@ -34,6 +34,39 @@ psi-swarm is a local-first website performance tracker. It measures Web Vitals a
   subcommands, `/api/watchlist` endpoints, and `/watchlist` web UI.
 - **SaaS Maker auth hub (2026-06-20):** CLI device-flow helper (`connect` / `whoami`) for fleet Cockpit token storage.
 - **pnpm workspace (2026-06-20):** npm workspaces migrated to pnpm; root scripts/docs use pnpm as canonical package manager.
+
+## Deployment & CI
+
+- **Web app (`web/`)** is a static Astro build deployed to the Cloudflare **Pages**
+  project `psi-swarm-web` (https://psi-swarm-web.pages.dev). Build:
+  `pnpm --filter psi-swarm-web run build` → `web/dist`.
+- **2026-06-26 — fix promoted to prod:** PR #10 (only auto-probe the local agent on
+  localhost / explicit `?agent=`/`?token=` intent) had merged to main but the live
+  site still served the pre-fix build — psi-swarm had no deploy automation. The
+  current main build was rebuilt and deployed manually; the live bundle now carries
+  the `shouldAutoProbeAgent` localhost gate, so a bare deployed page load no longer
+  fires failed `127.0.0.1:7777/7778` requests.
+- **2026-06-26 — CI deploy added (PR #11):** `.github/workflows/deploy.yml` builds
+  the web workspace with pnpm and deploys `web/dist` via `cloudflare/wrangler-action@v3`
+  on push to `main` (paths `web/**`) + manual dispatch. wrangler is pinned as a `web`
+  devDependency and the action runs from `workingDirectory: web` so it uses the local
+  binary (the wrangler-action's own install fails inside this pnpm monorepo).
+
+### Blocked
+
+- **CI deploy cannot go green — missing Cloudflare credentials.** This repo is
+  `sarthakagrawal927/psi-swarm` (personal account), **not** in the `sarthak-fleet`
+  org, so the org-level `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` secrets do
+  not reach it (the deploy step runs but wrangler errors with an empty
+  `CLOUDFLARE_API_TOKEN`). The workflow is correct and will pass the instant the
+  creds exist. Owner action required, one of:
+  1. **(recommended, matches fleet)** Transfer `sarthakagrawal927/psi-swarm` into the
+     `sarthak-fleet` org → it inherits the org secrets like every other fleet repo.
+  2. Add repo-level secrets:
+     `gh secret set CLOUDFLARE_API_TOKEN -R sarthakagrawal927/psi-swarm` and
+     `gh secret set CLOUDFLARE_ACCOUNT_ID -R sarthakagrawal927/psi-swarm` (user
+     supplies values; never hardcoded).
+  Meanwhile, manual deploys with an OAuth-authed wrangler keep the site current.
 
 ## Planned Next
 
