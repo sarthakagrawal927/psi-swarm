@@ -33,6 +33,12 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Force npm/npx for wrangler itself. Auto-detect would pick pnpm (the
+          # repo's package manager) and try `pnpm add wrangler` into the
+          # workspace root, which fails with ERR_PNPM_ADDING_TO_ROOT. wrangler is
+          # not a project dependency, so npx fetches it on demand instead.
+          packageManager: npm
+          wranglerVersion: '4.85.0'
           command: pages deploy web/dist --project-name=psi-swarm-web --branch=main --commit-dirty=true
       - name: Smoke production
         run: |
