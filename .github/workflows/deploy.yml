@@ -1,0 +1,42 @@
+name: Deploy psi-swarm-web to Cloudflare Pages
+# Reproduces the manual deploy:
+#   pnpm --filter psi-swarm-web run build && wrangler pages deploy web/dist --project-name=psi-swarm-web
+# CI deploy added 2026-06-26 — auto-deploys on push to main (web changes) + manual dispatch.
+# Before this, psi-swarm had no deploy automation, so merged web fixes never reached the live site.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - '.github/workflows/deploy.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-production:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with: { node-version: '22', cache: 'pnpm' }
+      # Install only the web workspace + its deps. --ignore-scripts skips the
+      # CLI's native builds (better-sqlite3, sharp) which the static Astro site
+      # does not need.
+      - run: pnpm install --filter psi-swarm-web... --frozen-lockfile --ignore-scripts
+      - run: pnpm --filter psi-swarm-web run build
+      - id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy web/dist --project-name=psi-swarm-web --branch=main --commit-dirty=true
+      - name: Smoke production
+        run: |
+          set -euo pipefail
+          for path in / /projects/; do
+            curl --fail --retry 5 --retry-delay 5 --max-time 20 "https://psi-swarm-web.pages.dev${path}" >/dev/null
+          done
