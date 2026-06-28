@@ -40,10 +40,10 @@ psi-swarm/
 ## Quick start (3 commands)
 
 ```bash
-git clone https://github.com/sarthakagrawal927/psi-swarm.git
+git clone https://github.com/sarthak-fleet/psi-swarm.git
 cd psi-swarm
-npm run setup                                                # installs + builds CLI
-npm run cli -- run https://example.com --runs 5 --parallel auto
+pnpm run setup                                                # installs + builds CLI
+pnpm run cli -- run https://example.com --runs 5 --parallel auto
 ```
 
 That's it. Beautiful Ink-driven progress UI in the terminal, percentile tables, LCP element identification, and ranked Lighthouse opportunities.
@@ -55,8 +55,8 @@ That's it. Beautiful Ink-driven progress UI in the terminal, percentile tables, 
 Same CLI, but driven from a browser:
 
 ```bash
-npm run serve                  # in one terminal: starts the local agent
-npm run web                    # in another terminal: starts the Astro dev server
+pnpm run serve                  # in one terminal: starts the local agent
+pnpm run web                    # in another terminal: starts the Astro dev server
 # → open http://localhost:4321
 ```
 
@@ -68,15 +68,15 @@ After every swarm, psi-swarm can stream an LLM-generated explanation grounded in
 
 ```bash
 # Local — uses your already-authenticated Claude / Codex / Gemini CLI via local-ai
-npm run cli -- run https://example.com --reason --reason-backend local-ai
+pnpm run cli -- run https://example.com --reason --reason-backend local-ai
 
 # Any OpenAI-compatible endpoint — OpenAI, OpenRouter, Groq, your own gateway, etc.
 export OPENAI_API_KEY=<your key>
 export OPENAI_BASE_URL=<base url including /v1>   # optional, defaults to https://api.openai.com/v1
-npm run cli -- run https://example.com --reason --reason-backend openai
+pnpm run cli -- run https://example.com --reason --reason-backend openai
 
 # Auto (default) — probes local-ai first, falls back to the OpenAI-compatible backend
-npm run cli -- run https://example.com --reason
+pnpm run cli -- run https://example.com --reason
 ```
 
 **For the zero-config local path**, also clone and run [local-ai](https://github.com/sarthakagrawal927/local-ai) on `:3456` — it wraps whichever LLM CLI you're already logged into (Claude, Codex, Gemini). No API key needed anywhere.
@@ -86,7 +86,7 @@ npm run cli -- run https://example.com --reason
 ### Sharing a static HTML report
 
 ```bash
-npm run cli -- run https://example.com --runs 5 --reason --output html --output-path report.html
+pnpm run cli -- run https://example.com --runs 5 --reason --output html --output-path report.html
 open report.html   # macOS — or just open the file path
 ```
 
@@ -97,7 +97,7 @@ Self-contained ~17 KB HTML with all the same data the terminal shows: percentile
 Install the skill once:
 
 ```bash
-npm run install:skill
+pnpm run install:skill
 ```
 
 After that, **Claude Code recognises perf-related questions automatically** — "why is example.com slow on mobile?", "check the Lighthouse score of x.com", "compare these two URLs", etc. — and runs psi-swarm with the right flags.
@@ -108,16 +108,16 @@ See [`cli/README.md`](./cli/README.md) for every command and option.
 
 ### Demo gallery (no agent required)
 
-Open [`/gallery`](http://localhost:4321/gallery) after `npm run web`. It renders three curated before/after fixtures so new users can see what comparison output looks like without running a swarm first.
+Open [`/gallery`](http://localhost:4321/gallery) after `pnpm run web`. It renders three curated before/after fixtures so new users can see what comparison output looks like without running a swarm first.
 
 ### Local regression watchlist
 
 Track critical URLs in SQLite and surface a compact queue of regressions, improvements, and stale pages:
 
 ```bash
-npm run cli -- watch add https://example.com/ --label "Home" --baseline-tag before-deploy
-npm run cli -- watch list
-npm run cli -- watch check
+pnpm run cli -- watch add https://example.com/ --label "Home" --baseline-tag before-deploy
+pnpm run cli -- watch list
+pnpm run cli -- watch check
 ```
 
 The web UI exposes the same queue at [`/watchlist`](http://localhost:4321/watchlist) when `psi-swarm serve` is running.
@@ -127,7 +127,7 @@ The web UI exposes the same queue at [`/watchlist`](http://localhost:4321/watchl
 Every saved swarm exports Lighthouse capture bundles to `~/.psi-swarm/artifacts/` and stores a derived diagnosis beside the history row (dominant LCP phase, top opportunities, optional baseline comparison notes). Disable with `--no-insight`, or plug in an external adapter at `~/.psi-swarm/adapters/trace-insight.mjs`.
 
 ```bash
-npm run cli -- run https://example.com --tag after-deploy --insight-baseline before-deploy
+pnpm run cli -- run https://example.com --tag after-deploy --insight-baseline before-deploy
 ```
 
 ## What's different from PageSpeed Insights / Lighthouse alone
