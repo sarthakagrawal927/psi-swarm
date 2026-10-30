@@ -113,17 +113,15 @@ program
     const results = await renderProgress(runner, url, presets, runs, parallel);
     await swarmPromise; // ensure runner promise is settled
     const elapsed = Date.now() - startedAt;
-    const artifactPaths = exportSwarmArtifacts(url, results, {
-      tag: opts.tag as string | undefined,
-    });
     const failed = results.filter((r) => r.error).length;
     if (failed === results.length) {
+      exportSwarmArtifacts(url, results, { tag: opts.tag as string | undefined });
       console.error(chalk.red(`All ${results.length} runs failed`));
       console.error(chalk.red(results[0]?.error ?? 'Unknown error'));
       process.exit(1);
     }
 
-    const traceInsights = await saveAndDeriveInsights(opts, url, results, artifactPaths);
+    const traceInsights = await saveAndDeriveInsights(opts, url, results);
     const cruxByFormFactor = await fetchCruxByFormFactor(url, opts);
     const domainRating = await fetchDomainRatingData(url, opts);
     const trafficProfile = resolveTrafficProfile(opts);
@@ -209,8 +207,7 @@ function resolveRunConfig(opts: Record<string, unknown>): {
 async function saveAndDeriveInsights(
   opts: Record<string, unknown>,
   url: string,
-  results: RunResultWithArtifact[],
-  artifactPaths: Map<string, string>
+  results: RunResultWithArtifact[]
 ): Promise<Awaited<ReturnType<typeof deriveTraceInsights>> | undefined> {
   if (opts.save !== false) {
     const db = new HistoryDB();
@@ -225,6 +222,9 @@ async function saveAndDeriveInsights(
         tag: opts.tag as string | undefined,
       });
     }
+    const artifactPaths = exportSwarmArtifacts(url, results, {
+      tag: opts.tag as string | undefined,
+    });
     let traceInsights: Awaited<ReturnType<typeof deriveTraceInsights>> | undefined;
     if (opts.insight !== false) {
       traceInsights = await deriveTraceInsights(db, url, results, {
@@ -236,6 +236,7 @@ async function saveAndDeriveInsights(
     db.close();
     return traceInsights;
   }
+  exportSwarmArtifacts(url, results, { tag: opts.tag as string | undefined });
   return undefined;
 }
 
