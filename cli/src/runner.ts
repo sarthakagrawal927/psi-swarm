@@ -3,6 +3,7 @@ import { launch, type LaunchedChrome } from 'chrome-launcher';
 import lighthouse from 'lighthouse';
 import type { Preset } from './presets.js';
 import { captureAuditsFromLhr, type CapturedAudit } from './audits.js';
+import { captureLighthouseProvenance, type LighthouseProvenance } from './provenance.js';
 
 export interface MetricSet {
   lcp?: number;
@@ -43,6 +44,7 @@ export interface RunResultWithArtifact extends RunResult {
   scripts?: ScriptArtifact[];
   audits?: CapturedAudit[];
   finalUrl?: string;
+  provenance?: LighthouseProvenance;
 }
 
 const CHROME_FLAGS = ['--headless=new', '--disable-gpu', '--no-sandbox', '--disable-dev-shm-usage'];
@@ -142,6 +144,7 @@ export class SwarmRunner extends EventEmitter {
   ): Promise<RunResultWithArtifact> {
     const startedAt = Date.now();
     let chrome: LaunchedChrome | undefined;
+    let provenance: LighthouseProvenance | undefined;
     try {
       chrome = await launch({ chromeFlags: CHROME_FLAGS });
       this.activeChromes.add(chrome);
@@ -168,6 +171,11 @@ export class SwarmRunner extends EventEmitter {
       );
       if (!result) throw new Error('Lighthouse returned no result');
       const lhr = result.lhr;
+      provenance = {
+        ...captureLighthouseProvenance(lhr),
+        nodeVersion: process.version,
+        chromeFlags: [...CHROME_FLAGS],
+      };
       if (lhr.runtimeError) {
         throw new Error(
           `Lighthouse runtime error: ${lhr.runtimeError.code} — ${lhr.runtimeError.message}`
@@ -190,6 +198,7 @@ export class SwarmRunner extends EventEmitter {
         startedAt,
         finishedAt: Date.now(),
         metrics,
+        provenance,
         finalUrl: lhr.finalDisplayedUrl ?? lhr.finalUrl,
       };
       if (opts.captureScripts) {
@@ -207,6 +216,7 @@ export class SwarmRunner extends EventEmitter {
         startedAt,
         finishedAt: Date.now(),
         error: err instanceof Error ? err.message : String(err),
+        provenance,
       };
     } finally {
       if (chrome) {

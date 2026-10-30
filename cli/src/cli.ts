@@ -115,6 +115,7 @@ program
     const elapsed = Date.now() - startedAt;
     const failed = results.filter((r) => r.error).length;
     if (failed === results.length) {
+      exportSwarmArtifacts(url, results, { tag: opts.tag as string | undefined });
       console.error(chalk.red(`All ${results.length} runs failed`));
       console.error(chalk.red(results[0]?.error ?? 'Unknown error'));
       process.exit(1);
@@ -221,11 +222,11 @@ async function saveAndDeriveInsights(
         tag: opts.tag as string | undefined,
       });
     }
+    const artifactPaths = exportSwarmArtifacts(url, results, {
+      tag: opts.tag as string | undefined,
+    });
     let traceInsights: Awaited<ReturnType<typeof deriveTraceInsights>> | undefined;
     if (opts.insight !== false) {
-      const artifactPaths = exportSwarmArtifacts(url, results, {
-        tag: opts.tag as string | undefined,
-      });
       traceInsights = await deriveTraceInsights(db, url, results, {
         tag: opts.tag as string | undefined,
         artifactPaths,
@@ -235,9 +236,7 @@ async function saveAndDeriveInsights(
     db.close();
     return traceInsights;
   }
-  if (opts.insight !== false) {
-    exportSwarmArtifacts(url, results, { tag: opts.tag as string | undefined });
-  }
+  exportSwarmArtifacts(url, results, { tag: opts.tag as string | undefined });
   return undefined;
 }
 
