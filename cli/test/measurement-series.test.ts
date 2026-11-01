@@ -136,6 +136,7 @@ test('watchlist retains readings but never calls cross-engine or unknown history
     const item = queue.find((row) => row.url === `https://${name}.example.com/`)!;
     assert.equal(item.status, 'missing');
     assert.equal(item.comparability?.comparable, false);
+    assert.match(item.message, /update this watchlist baseline tag/);
     assert.equal(
       item.metrics.some((metric) => metric.delta !== undefined),
       false

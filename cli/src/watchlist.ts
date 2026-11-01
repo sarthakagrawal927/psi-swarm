@@ -173,6 +173,9 @@ export function evaluateWatchlist(db: HistoryDB, refreshedAt = Date.now()): Watc
           ? 'First batch; collect another successful batch on the same Lighthouse engine before comparing'
           : `No comparable automatic baseline (${comparability.reason}); collect another successful batch on the current Lighthouse engine`;
       }
+      if (entry.baseline_tag && latestSuccessful.length > 0) {
+        comparability.message += '; update this watchlist baseline tag to the new baseline series';
+      }
       const current = firstBatch ? p75(latestSuccessful) : undefined;
       queue.push({
         url: entry.url,
