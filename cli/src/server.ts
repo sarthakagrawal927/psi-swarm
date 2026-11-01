@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { SwarmRunner, type RunResultWithArtifact, type RunnerEvent } from './runner.js';
 import { HistoryDB } from './db.js';
-import { measurementCompatibility } from './measurement-series.js';
+import { measurementCompatibility, measurementHeadline } from './measurement-series.js';
 import { PRESETS, PRESET_GROUPS, resolvePresets } from './presets.js';
 import { profileMachine, resolveParallelism } from './machine.js';
 import { discover, rank, type DiscoveredLink } from './discover.js';
@@ -542,15 +542,48 @@ export function createAgentServer(opts: ServeOptions): {
                 .sort((a, b) => a.path.localeCompare(b.path));
               const totalRuns = enrichedPages.reduce((s, p) => s + p.totalRuns, 0);
               const lastRunAt = enrichedPages.reduce((s, p) => Math.max(s, p.lastRunAt), 0);
-              const allMobile = enrichedPages
-                .map((p) => p.mobileLcpP75)
-                .filter((v): v is number => typeof v === 'number');
-              const allDesktop = enrichedPages
-                .map((p) => p.desktopLcpP75)
-                .filter((v): v is number => typeof v === 'number');
-              const allCls = enrichedPages
-                .map((p) => p.cls)
-                .filter((v): v is number => typeof v === 'number');
+              const mobile = measurementHeadline(
+                enrichedPages.flatMap((page) =>
+                  typeof page.mobileLcpP75 === 'number'
+                    ? [
+                        {
+                          value: page.mobileLcpP75,
+                          lighthouseVersion: page.mobileLighthouseVersion,
+                          measuredAt: page.mobileMeasuredAt!,
+                        },
+                      ]
+                    : []
+                ),
+                enrichedPages.length
+              );
+              const desktop = measurementHeadline(
+                enrichedPages.flatMap((page) =>
+                  typeof page.desktopLcpP75 === 'number'
+                    ? [
+                        {
+                          value: page.desktopLcpP75,
+                          lighthouseVersion: page.desktopLighthouseVersion,
+                          measuredAt: page.desktopMeasuredAt!,
+                        },
+                      ]
+                    : []
+                ),
+                enrichedPages.length
+              );
+              const cls = measurementHeadline(
+                enrichedPages.flatMap((page) =>
+                  typeof page.cls === 'number'
+                    ? [
+                        {
+                          value: page.cls,
+                          lighthouseVersion: page.clsLighthouseVersion,
+                          measuredAt: page.clsMeasuredAt!,
+                        },
+                      ]
+                    : []
+                ),
+                enrichedPages.length
+              );
               const host = hostnameFromUrl(origin);
               const cfPlatform = host ? isCloudflarePlatformHost(host) : false;
               const dr = host ? dbRatings.get(host) : undefined;
@@ -559,9 +592,10 @@ export function createAgentServer(opts: ServeOptions): {
                 totalRuns,
                 lastRunAt,
                 pageCount: enrichedPages.length,
-                worstMobileLcp: allMobile.length > 0 ? Math.max(...allMobile) : undefined,
-                worstDesktopLcp: allDesktop.length > 0 ? Math.max(...allDesktop) : undefined,
-                worstCls: allCls.length > 0 ? Math.max(...allCls) : undefined,
+                worstMobileLcp: mobile.value,
+                worstDesktopLcp: desktop.value,
+                worstCls: cls.value,
+                measurementCoverage: { mobile, desktop, cls },
                 isCloudflarePlatform: cfPlatform,
                 // dr.rating === null is the "checked, Ahrefs has no rating" sentinel —
                 // expose no rating, but keep fetchedAt so the UI can show '—' vs pending.

@@ -19,8 +19,8 @@
       "project": ["src/**/*.{ts,tsx}", "test/**/*.{ts,mjs}"]
     },
     "web": {
-      "entry": ["astro.config.mjs"],
-      "project": ["src/**/*.{ts,tsx,astro}"],
+      "entry": ["astro.config.mjs", "test/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,astro}", "test/**/*.ts"],
       "ignoreDependencies": ["tailwindcss", "wrangler"]
     }
   }

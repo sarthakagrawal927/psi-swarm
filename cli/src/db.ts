@@ -95,6 +95,10 @@ export interface ProjectSummary {
   desktopPerfScoreP50?: number;
   mobileLighthouseVersion?: string | null;
   desktopLighthouseVersion?: string | null;
+  clsLighthouseVersion?: string | null;
+  mobileMeasuredAt?: number;
+  desktopMeasuredAt?: number;
+  clsMeasuredAt?: number;
   cls?: number;
 }
 
@@ -452,6 +456,9 @@ export class HistoryDB {
     return urls.map((u) => {
       const mobile = stmt.all(u.url, 'mobile-mid', cutoff) as BatchRow[];
       const desktop = stmt.all(u.url, 'desktop', cutoff) as BatchRow[];
+      const combined = [...mobile, ...desktop].sort(
+        (left, right) => right.started_at - left.started_at
+      );
       return {
         url: u.url,
         totalRuns: u.count,
@@ -462,7 +469,11 @@ export class HistoryDB {
         desktopPerfScoreP50: latestBatchPercentile(desktop, 'performance_score', 50),
         mobileLighthouseVersion: mobile[0]?.lighthouse_version,
         desktopLighthouseVersion: desktop[0]?.lighthouse_version,
-        cls: latestBatchPercentile([...mobile, ...desktop], 'cls', 75),
+        clsLighthouseVersion: combined[0]?.lighthouse_version,
+        mobileMeasuredAt: mobile[0]?.started_at,
+        desktopMeasuredAt: desktop[0]?.started_at,
+        clsMeasuredAt: combined[0]?.started_at,
+        cls: latestBatchPercentile(combined, 'cls', 75),
       };
     });
   }

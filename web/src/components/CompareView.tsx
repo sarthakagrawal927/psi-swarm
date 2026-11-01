@@ -336,7 +336,7 @@ export default function CompareView() {
   );
 }
 
-function CompareResult({
+export function CompareResult({
   result,
   pct,
 }: {
@@ -344,10 +344,31 @@ function CompareResult({
   pct: 'p50' | 'p75' | 'p90' | 'p99';
 }) {
   const pctKey = pct as keyof Stats;
+  if (result.comparability?.comparable === false) {
+    const versions = (values: Array<string | null>) =>
+      values.map((value) => value ?? 'unknown').join(', ');
+    return (
+      <div
+        role="status"
+        className="border border-[var(--color-border)] bg-[var(--color-panel)] rounded-lg p-5 space-y-3 break-words"
+      >
+        <h3 className="font-semibold">Measurements are not comparable</h3>
+        <p className="text-sm text-[var(--color-dim)]">{result.comparability.message}</p>
+        <p className="text-xs font-mono text-[var(--color-dim)]">
+          Baseline Lighthouse: {versions(result.comparability.baselineVersions)}
+          <br />
+          Candidate Lighthouse: {versions(result.comparability.candidateVersions)}
+        </p>
+        <p className="text-xs text-[var(--color-dim)]">
+          All original readings remain available in history.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="border border-[var(--color-border)] bg-[var(--color-panel)] rounded-lg overflow-hidden">
       <div className="px-5 py-3 border-b border-[var(--color-border)]">
-        <div className="flex items-baseline justify-between">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
           <span className="font-semibold">Comparison</span>
           <span className="text-[var(--color-dim)] text-xs font-mono">
             {result.baselineTag} (n={result.baselineCount}) vs {result.candidateTag} (n=
@@ -355,57 +376,64 @@ function CompareResult({
           </span>
         </div>
         <div className="text-xs text-[var(--color-dim)] mt-1 font-mono truncate">{result.url}</div>
+        {result.comparability?.comparable && (
+          <div className="text-xs text-[var(--color-dim)] mt-1 font-mono">
+            Lighthouse {result.comparability.candidateVersions.join(', ')}
+          </div>
+        )}
       </div>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-[var(--color-dim)] text-xs uppercase tracking-wide">
-            <th className="text-left py-2 px-4">Metric</th>
-            <th className="text-right py-2 px-3">Baseline {pct}</th>
-            <th className="text-right py-2 px-3">Candidate {pct}</th>
-            <th className="text-right py-2 px-3">Δ</th>
-            <th className="text-right py-2 px-3">Baseline range</th>
-            <th className="text-right py-2 px-3">Candidate range</th>
-          </tr>
-        </thead>
-        <tbody>
-          {result.metrics.map((m) => {
-            const spec = METRIC_LABELS[m.key];
-            if (!spec) return null;
-            const baseVal = m.baseline?.[pctKey];
-            const candVal = m.candidate?.[pctKey];
-            const delta = fmtDelta(
-              baseVal ?? NaN,
-              candVal ?? NaN,
-              !!spec.higherIsBetter,
-              spec.unit
-            );
-            return (
-              <tr key={m.key} className="border-t border-[var(--color-border)]">
-                <td className="py-1.5 px-4 font-medium">{spec.label}</td>
-                <td className={`text-right py-1.5 px-3 font-mono ${colorClass(baseVal, spec)}`}>
-                  {fmt(baseVal, spec.unit)}
-                </td>
-                <td className={`text-right py-1.5 px-3 font-mono ${colorClass(candVal, spec)}`}>
-                  {fmt(candVal, spec.unit)}
-                </td>
-                <td className={`text-right py-1.5 px-3 font-mono text-xs ${delta.cls}`}>
-                  {delta.text}
-                </td>
-                <td className="text-right py-1.5 px-3 font-mono text-xs text-[var(--color-dim)]">
-                  {m.baseline
-                    ? `${fmt(m.baseline.min, spec.unit)}–${fmt(m.baseline.max, spec.unit)}`
-                    : '—'}
-                </td>
-                <td className="text-right py-1.5 px-3 font-mono text-xs text-[var(--color-dim)]">
-                  {m.candidate
-                    ? `${fmt(m.candidate.min, spec.unit)}–${fmt(m.candidate.max, spec.unit)}`
-                    : '—'}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-[var(--color-dim)] text-xs uppercase tracking-wide">
+              <th className="text-left py-2 px-4">Metric</th>
+              <th className="text-right py-2 px-3">Baseline {pct}</th>
+              <th className="text-right py-2 px-3">Candidate {pct}</th>
+              <th className="text-right py-2 px-3">Δ</th>
+              <th className="text-right py-2 px-3">Baseline range</th>
+              <th className="text-right py-2 px-3">Candidate range</th>
+            </tr>
+          </thead>
+          <tbody>
+            {result.metrics.map((m) => {
+              const spec = METRIC_LABELS[m.key];
+              if (!spec) return null;
+              const baseVal = m.baseline?.[pctKey];
+              const candVal = m.candidate?.[pctKey];
+              const delta = fmtDelta(
+                baseVal ?? NaN,
+                candVal ?? NaN,
+                !!spec.higherIsBetter,
+                spec.unit
+              );
+              return (
+                <tr key={m.key} className="border-t border-[var(--color-border)]">
+                  <td className="py-1.5 px-4 font-medium">{spec.label}</td>
+                  <td className={`text-right py-1.5 px-3 font-mono ${colorClass(baseVal, spec)}`}>
+                    {fmt(baseVal, spec.unit)}
+                  </td>
+                  <td className={`text-right py-1.5 px-3 font-mono ${colorClass(candVal, spec)}`}>
+                    {fmt(candVal, spec.unit)}
+                  </td>
+                  <td className={`text-right py-1.5 px-3 font-mono text-xs ${delta.cls}`}>
+                    {delta.text}
+                  </td>
+                  <td className="text-right py-1.5 px-3 font-mono text-xs text-[var(--color-dim)]">
+                    {m.baseline
+                      ? `${fmt(m.baseline.min, spec.unit)}–${fmt(m.baseline.max, spec.unit)}`
+                      : '—'}
+                  </td>
+                  <td className="text-right py-1.5 px-3 font-mono text-xs text-[var(--color-dim)]">
+                    {m.candidate
+                      ? `${fmt(m.candidate.min, spec.unit)}–${fmt(m.candidate.max, spec.unit)}`
+                      : '—'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
       <div className="px-5 py-3 border-t border-[var(--color-border)] text-xs text-[var(--color-dim)]">
         Green = improved · Red = regressed · Range = min–max across all runs in each tagged swarm.
       </div>

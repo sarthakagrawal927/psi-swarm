@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import Database from 'better-sqlite3';
 import { HistoryDB } from '../src/db.js';
-import { measurementCompatibility } from '../src/measurement-series.js';
+import { measurementCompatibility, measurementHeadline } from '../src/measurement-series.js';
 import { evaluateWatchlist } from '../src/watchlist.js';
 import { deriveTraceInsights } from '../src/trace-insight.js';
 
@@ -16,12 +16,40 @@ test('measurement comparisons require one matching known engine version', () => 
     [[null], ['13.6.0'], 'unknown-version'],
     [['13.6.0'], [undefined], 'unknown-version'],
     [['13.4.1', '13.6.0'], ['13.6.0'], 'mixed-versions'],
+    [[null, '13.6.0'], ['13.6.0'], 'mixed-versions'],
     [[], ['13.6.0'], 'missing-runs'],
   ] as const) {
     const result = measurementCompatibility(baseline, candidate);
     assert.equal(result.comparable, false);
     assert.equal(result.reason, reason);
   }
+});
+
+test('origin headlines retain one known engine with explicit excluded coverage', () => {
+  const old = { value: 4500, lighthouseVersion: '13.4.1', measuredAt: 1 };
+  const current = { value: 1500, lighthouseVersion: '13.6.0', measuredAt: 2 };
+  const latest = { value: 1600, lighthouseVersion: '13.6.0', measuredAt: 3 };
+  assert.deepEqual(measurementHeadline([old, current, latest]), {
+    value: 1600,
+    lighthouseVersion: '13.6.0',
+    includedPages: 2,
+    excludedPages: 1,
+    missingPages: 0,
+    reason: 'selected-latest-version',
+  });
+  assert.equal(measurementHeadline([current, latest]).reason, 'single-version');
+  assert.equal(measurementHeadline([]).reason, 'missing-readings');
+  assert.equal(measurementHeadline([current], 3).excludedPages, 2);
+  assert.equal(measurementHeadline([current], 3).missingPages, 2);
+  const unknown = measurementHeadline([old, { value: 1800, measuredAt: 4 }]);
+  assert.equal(unknown.reason, 'unknown-version');
+  assert.equal(unknown.value, undefined);
+  assert.equal(unknown.includedPages, 0);
+  assert.equal(unknown.excludedPages, 2);
+  const tied = measurementHeadline([old, { ...current, measuredAt: 1 }]);
+  assert.equal(tied.reason, 'ambiguous-latest-version');
+  assert.equal(tied.value, undefined);
+  assert.equal(tied.excludedPages, 2);
 });
 
 test('legacy history migration preserves every old value and leaves its engine unknown', (t) => {

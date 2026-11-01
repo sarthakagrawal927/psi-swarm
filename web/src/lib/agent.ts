@@ -381,6 +381,12 @@ export interface CompareResponse {
   pct: string;
   baselineCount: number;
   candidateCount: number;
+  comparability?: {
+    comparable: boolean;
+    message: string;
+    baselineVersions: Array<string | null>;
+    candidateVersions: Array<string | null>;
+  };
   metrics: Array<{
     key: string;
     baseline: Stats | null;
