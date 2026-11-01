@@ -130,12 +130,12 @@ test('HTTP comparison, history and watchlist isolate engine versions and their d
     value: 1500,
     lighthouseVersion: '13.6.0',
     includedPages: 1,
-    excludedPages: 2,
+    excludedPages: 1,
     missingPages: 1,
     reason: 'selected-latest-version',
   });
   assert.equal(projects.projects[0].measurementCoverage.desktop.reason, 'unknown-version');
-  assert.equal(projects.projects[0].measurementCoverage.desktop.excludedPages, 3);
+  assert.equal(projects.projects[0].measurementCoverage.desktop.excludedPages, 1);
   assert.equal(projects.projects[0].pages[0].mobileLighthouseVersion, '13.6.0');
   const insights = await request(`/api/insights?${new URLSearchParams({ url })}`).then((response) =>
     response.json()

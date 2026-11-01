@@ -31,7 +31,7 @@ pinned via `packageManager`.
 ## Critical constraints
 
 - **No root test/lint scripts.** The CLI owns a narrow external-adapter
-  regression suite; the web package has no test suite. See
+  regression suite; the web package tests the local comparison consumers. See
   [docs/development/testing.md](./docs/development/testing.md).
 - **Repository CI exists.** `.github/workflows/ci.yml` runs the CLI
   regression suite, CLI/web builds, and docs checks for helper changes.

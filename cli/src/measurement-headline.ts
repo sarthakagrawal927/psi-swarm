@@ -36,7 +36,7 @@ export function measurementHeadline(
     value: included.length ? Math.max(...included.map((reading) => reading.value)) : undefined,
     lighthouseVersion,
     includedPages: included.length,
-    excludedPages: pageCount - included.length,
+    excludedPages: readings.length - included.length,
     missingPages: pageCount - readings.length,
     reason:
       readings.length === 0

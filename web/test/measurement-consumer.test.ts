@@ -29,7 +29,8 @@ const comparableFixture: CompareResponse = {
         p99: 2900,
         min: 2500,
         max: 3000,
-        count: 5,
+        n: 5,
+        stddev: 0,
         mean: 2700,
       },
       candidate: {
@@ -39,7 +40,8 @@ const comparableFixture: CompareResponse = {
         p99: 1900,
         min: 1500,
         max: 2000,
-        count: 5,
+        n: 5,
+        stddev: 0,
         mean: 1700,
       },
     },
@@ -78,14 +80,19 @@ test('comparison consumer explains incompatible series and preserves same-engine
 });
 
 test('origin consumer makes engine and excluded headline coverage visible', () => {
-  const known = { lighthouseVersion: '13.6.0', includedPages: 2, excludedPages: 1 };
-  const unknown = { lighthouseVersion: null, includedPages: 0, excludedPages: 1 };
+  const known = {
+    lighthouseVersion: '13.6.0',
+    includedPages: 2,
+    excludedPages: 1,
+    missingPages: 1,
+  };
+  const unknown = { lighthouseVersion: null, includedPages: 0, excludedPages: 1, missingPages: 0 };
   const html = renderToStaticMarkup(
     createElement(MeasurementCoverage, {
       coverage: { mobile: known, desktop: unknown, cls: known },
     })
   );
-  assert.match(html, /mobile: Lighthouse 13.6.0/);
+  assert.match(html, /Mobile LCP: Lighthouse 13.6.0/);
   assert.match(html, /2 pages included · 1 excluded/);
-  assert.match(html, /desktop: Lighthouse unknown · 0 pages included · 1 excluded/);
+  assert.match(html, /Desktop LCP: Lighthouse unknown · 0 pages included · 1 excluded/);
 });

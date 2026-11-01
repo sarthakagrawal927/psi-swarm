@@ -16,7 +16,7 @@ interface HeadlineCoverage {
   lighthouseVersion: string | null;
   includedPages: number;
   excludedPages: number;
-  missingPages?: number;
+  missingPages: number;
 }
 interface ProjectGrouped {
   origin: string;
@@ -720,9 +720,9 @@ export function MeasurementCoverage({
     <div className="px-5 pb-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-[var(--color-dim)]">
       {Object.entries(coverage).map(([device, value]) => (
         <span key={device}>
-          {device}: Lighthouse {value.lighthouseVersion ?? 'unknown'} · {value.includedPages} pages
-          included · {value.excludedPages} excluded
-          {value.missingPages ? ` (${value.missingPages} unmeasured)` : ''}
+          {{ mobile: 'Mobile LCP', desktop: 'Desktop LCP', cls: 'CLS' }[device]}: Lighthouse{' '}
+          {value.lighthouseVersion ?? 'unknown'} · {value.includedPages} pages included ·{' '}
+          {value.excludedPages} excluded · {value.missingPages} unmeasured
         </span>
       ))}
     </div>

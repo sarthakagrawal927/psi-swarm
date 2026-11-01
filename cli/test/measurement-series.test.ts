@@ -40,7 +40,7 @@ test('origin headlines retain one known engine with explicit excluded coverage',
   });
   assert.equal(measurementHeadline([current, latest]).reason, 'single-version');
   assert.equal(measurementHeadline([]).reason, 'missing-readings');
-  assert.equal(measurementHeadline([current], 3).excludedPages, 2);
+  assert.equal(measurementHeadline([current], 3).excludedPages, 0);
   assert.equal(measurementHeadline([current], 3).missingPages, 2);
   const unknown = measurementHeadline([old, { value: 1800, measuredAt: 4 }]);
   assert.equal(unknown.reason, 'unknown-version');
@@ -145,6 +145,42 @@ test('watchlist retains readings but never calls cross-engine or unknown history
   const same = queue.find((row) => row.url === 'https://same.example.com/')!;
   assert.equal(same.status, 'improved');
   assert.equal(same.comparability?.comparable, true);
+});
+
+test('untagged watchlists preserve first-batch readings and give automatic baseline recovery', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'psi-engine-auto-watchlist-'));
+  const db = new HistoryDB(join(dir, 'history.db'));
+  t.after(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const url = 'https://auto.example.com/';
+  const now = Date.now();
+  db.addWatchlist({ url });
+  const insert = (at: number, version?: string) =>
+    db.insert({
+      url,
+      preset: 'mobile-mid',
+      started_at: at,
+      finished_at: at + 1,
+      metrics: { lcp: 1500, performance_score: 99 },
+      lighthouseVersion: version,
+    });
+  insert(now - 1000);
+  const first = evaluateWatchlist(db, now)[0];
+  assert.equal(first.status, 'stable');
+  assert.equal(first.comparability?.comparable, false);
+  assert.equal(first.metrics[0].latest, 1500);
+  assert.equal(first.metrics[0].delta, undefined);
+  assert.match(first.message, /First batch/);
+  insert(now, '13.6.0');
+  const changed = evaluateWatchlist(db, now + 2)[0];
+  assert.equal(changed.status, 'missing');
+  assert.equal(changed.comparability?.reason, 'unknown-version');
+  assert.match(changed.message, /automatic baseline/);
+  assert.doesNotMatch(changed.message, /baseline tag/);
+  insert(now + 100, '13.6.0');
+  assert.equal(evaluateWatchlist(db, now + 102)[0].comparability?.comparable, true);
 });
 
 test('project aggregation separates reused tags by engine version', (t) => {

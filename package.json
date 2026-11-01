@@ -28,7 +28,7 @@
     "quality:cycles": "knip --cycles --no-config-hints",
     "quality:dependencies": "node scripts/check-code-health.mjs dependencies",
     "quality:suppressions": "node scripts/check-code-health.mjs suppressions",
-    "quality": "pnpm run format:check && pnpm run quality:lint && pnpm run build:cli && pnpm run build:web && pnpm --filter psi-swarm run test:coverage && pnpm run quality:unused && pnpm run quality:complexity && pnpm run quality:duplication && pnpm run quality:cycles && pnpm run quality:dependencies && pnpm run quality:suppressions && pnpm run docs:check",
+    "quality": "pnpm run format:check && pnpm run quality:lint && pnpm run build:cli && pnpm run build:web && pnpm --filter psi-swarm run test:coverage && pnpm --filter psi-swarm-web run test && pnpm run quality:unused && pnpm run quality:complexity && pnpm run quality:duplication && pnpm run quality:cycles && pnpm run quality:dependencies && pnpm run quality:suppressions && pnpm run docs:check",
     "docs:check": "node scripts/validate-docs.mjs"
   },
   "engines": {

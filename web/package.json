@@ -7,7 +7,8 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "test": "node --import ../cli/node_modules/tsx/dist/loader.mjs --test test/**/*.test.ts"
   },
   "dependencies": {
     "@astrojs/react": "^6.0.1",

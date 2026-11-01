@@ -162,15 +162,27 @@ export function evaluateWatchlist(db: HistoryDB, refreshedAt = Date.now()): Watc
       latest.filter((run) => !run.error).map((run) => run.lighthouse_version)
     );
     if (!comparability.comparable) {
+      const firstBatch = !entry.baseline_tag && baseline.length === 0;
+      if (!entry.baseline_tag) {
+        comparability.message = firstBatch
+          ? 'First batch; collect another successful batch on the same Lighthouse engine before comparing'
+          : `No comparable automatic baseline (${comparability.reason}); collect another successful batch on the current Lighthouse engine`;
+      }
+      const current = firstBatch ? p75(latest.filter((run) => !run.error)) : undefined;
       queue.push({
         url: entry.url,
         label: entry.label ?? undefined,
         preset,
-        status: 'missing',
+        status: firstBatch ? 'stable' : 'missing',
         baselineTag: entry.baseline_tag ?? undefined,
         latestRunAt: latest[0]?.started_at,
         baselineRunAt: baseline[0]?.started_at,
-        metrics: [],
+        metrics: current
+          ? [
+              { metric: 'lcp', latest: current.lcp },
+              { metric: 'performance_score', latest: current.score },
+            ]
+          : [],
         comparability,
         message: comparability.message,
       });
