@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 import Database from 'better-sqlite3';
 import { HistoryDB } from '../src/db.js';
-import { measurementCompatibility, measurementHeadline } from '../src/measurement-series.js';
+import { measurementCompatibility } from '../src/measurement-series.js';
+import { measurementHeadline } from '../src/measurement-headline.js';
 import { evaluateWatchlist } from '../src/watchlist.js';
 import { deriveTraceInsights } from '../src/trace-insight.js';
 

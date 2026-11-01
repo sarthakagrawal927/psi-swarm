@@ -28,6 +28,7 @@ import {
 } from './runner.js';
 import { HistoryDB, type RunRow } from './db.js';
 import { measurementCompatibility } from './measurement-series.js';
+import { percentile } from './stats.js';
 import { renderSwarmReport } from './report.js';
 import { discover, rank, type DiscoveredLink } from './discover.js';
 import { profileMachine, resolveParallelism } from './machine.js';
@@ -578,17 +579,9 @@ program
     const base = db.runsByTag(url, opts.baseline).filter((run) => !run.error);
     const cand = db.runsByTag(url, opts.candidate).filter((run) => !run.error);
     db.close();
-    if (base.length === 0 || cand.length === 0) {
-      console.log(
-        chalk.red(
-          `Missing runs. baseline=${opts.baseline} (n=${base.length})  candidate=${opts.candidate} (n=${cand.length})`
-        )
-      );
-      process.exit(1);
-    }
     const comparability = measurementCompatibility(
-      base.filter((run) => !run.error).map((run) => run.lighthouse_version),
-      cand.filter((run) => !run.error).map((run) => run.lighthouse_version)
+      base.map((run) => run.lighthouse_version),
+      cand.map((run) => run.lighthouse_version)
     );
     if (!comparability.comparable) {
       console.error(`Not comparable: ${comparability.message}`);
@@ -617,17 +610,6 @@ program
       { key: 'ttfb', label: 'TTFB', unit: 'ms' },
       { key: 'si', label: 'SI', unit: 'ms' },
     ];
-
-    const percentile = (vs: number[], pct: number): number => {
-      if (vs.length === 0) return NaN;
-      const sorted = vs.slice().sort((a, b) => a - b);
-      const idx = (pct / 100) * (sorted.length - 1);
-      const lo = Math.floor(idx);
-      const hi = Math.ceil(idx);
-      if (lo === hi) return sorted[lo];
-      const w = idx - lo;
-      return sorted[lo] * (1 - w) + sorted[hi] * w;
-    };
 
     const fmt = (v: number, unit: 'ms' | 'index' | 'score') => {
       if (!Number.isFinite(v)) return '—';
@@ -660,8 +642,14 @@ program
       const baseVals = base.map((r) => r[m.key]).filter((v): v is number => typeof v === 'number');
       const candVals = cand.map((r) => r[m.key]).filter((v): v is number => typeof v === 'number');
       if (baseVals.length === 0 && candVals.length === 0) continue;
-      const b = percentile(baseVals, pctNum);
-      const c = percentile(candVals, pctNum);
+      const b = percentile(
+        baseVals.sort((a, b) => a - b),
+        pctNum
+      );
+      const c = percentile(
+        candVals.sort((a, b) => a - b),
+        pctNum
+      );
       t.push([
         chalk.bold(m.label),
         fmt(b, m.unit),
