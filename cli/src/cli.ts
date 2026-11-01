@@ -27,6 +27,8 @@ import {
   type ScriptArtifact,
 } from './runner.js';
 import { HistoryDB, type RunRow } from './db.js';
+import { measurementCompatibility } from './measurement-series.js';
+import { percentile } from './stats.js';
 import { renderSwarmReport } from './report.js';
 import { discover, rank, type DiscoveredLink } from './discover.js';
 import { profileMachine, resolveParallelism } from './machine.js';
@@ -220,6 +222,7 @@ async function saveAndDeriveInsights(
         metrics: r.metrics,
         error: r.error,
         tag: opts.tag as string | undefined,
+        lighthouseVersion: r.provenance?.lighthouseVersion,
       });
     }
     const artifactPaths = exportSwarmArtifacts(url, results, {
@@ -573,16 +576,21 @@ program
   .option('--pct <pct>', 'Percentile to compare (p50|p75|p90|p99)', 'p75')
   .action((url: string, opts) => {
     const db = new HistoryDB();
-    const base = db.runsByTag(url, opts.baseline);
-    const cand = db.runsByTag(url, opts.candidate);
+    const base = db.runsByTag(url, opts.baseline).filter((run) => !run.error);
+    const cand = db.runsByTag(url, opts.candidate).filter((run) => !run.error);
     db.close();
-    if (base.length === 0 || cand.length === 0) {
-      console.log(
-        chalk.red(
-          `Missing runs. baseline=${opts.baseline} (n=${base.length})  candidate=${opts.candidate} (n=${cand.length})`
-        )
+    const comparability = measurementCompatibility(
+      base.map((run) => run.lighthouse_version),
+      cand.map((run) => run.lighthouse_version)
+    );
+    if (!comparability.comparable) {
+      console.error(`Not comparable: ${comparability.message}`);
+      console.error(
+        `baseline=${opts.baseline} (n=${base.length}) candidate=${opts.candidate} (n=${cand.length})`
       );
-      process.exit(1);
+      console.error(JSON.stringify(comparability));
+      process.exitCode = 1;
+      return;
     }
     const pctKey = String(opts.pct).toLowerCase();
     if (!['p50', 'p75', 'p90', 'p99'].includes(pctKey)) {
@@ -605,17 +613,6 @@ program
       { key: 'ttfb', label: 'TTFB', unit: 'ms' },
       { key: 'si', label: 'SI', unit: 'ms' },
     ];
-
-    const percentile = (vs: number[], pct: number): number => {
-      if (vs.length === 0) return NaN;
-      const sorted = vs.slice().sort((a, b) => a - b);
-      const idx = (pct / 100) * (sorted.length - 1);
-      const lo = Math.floor(idx);
-      const hi = Math.ceil(idx);
-      if (lo === hi) return sorted[lo];
-      const w = idx - lo;
-      return sorted[lo] * (1 - w) + sorted[hi] * w;
-    };
 
     const fmt = (v: number, unit: 'ms' | 'index' | 'score') => {
       if (!Number.isFinite(v)) return '—';
@@ -648,8 +645,14 @@ program
       const baseVals = base.map((r) => r[m.key]).filter((v): v is number => typeof v === 'number');
       const candVals = cand.map((r) => r[m.key]).filter((v): v is number => typeof v === 'number');
       if (baseVals.length === 0 && candVals.length === 0) continue;
-      const b = percentile(baseVals, pctNum);
-      const c = percentile(candVals, pctNum);
+      const b = percentile(
+        baseVals.sort((a, b) => a - b),
+        pctNum
+      );
+      const c = percentile(
+        candVals.sort((a, b) => a - b),
+        pctNum
+      );
       t.push([
         chalk.bold(m.label),
         fmt(b, m.unit),
@@ -661,7 +664,7 @@ program
       boxen(
         `Comparison for ${chalk.bold(url)}\n` +
           `baseline=${opts.baseline} (n=${base.length})  vs  candidate=${opts.candidate} (n=${cand.length})\n` +
-          `percentile = ${pctKey}`,
+          `percentile = ${pctKey} · Lighthouse ${comparability.candidateVersions[0]}`,
         { padding: 1, borderColor: 'cyan', borderStyle: 'round' }
       )
     );

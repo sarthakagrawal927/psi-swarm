@@ -10,11 +10,13 @@ description: The current test and quality checks.
 - The root `package.json` deliberately has no generic `test` or `lint` script;
   tests stay with the package that owns them. `pnpm quality` is the repository
   quality gate.
-- The `cli` package has 20 Node tests covering crawler IP matching, project
-  aggregation, metric validation, and the external trace-insight adapter
-  boundary. Run them with `pnpm --filter psi-swarm test` or run the gated
+- The `cli` package has Node tests covering crawler IP matching, project
+  aggregation, metric validation, engine provenance and migration, comparison
+  compatibility, HTTP responses, and the external trace-insight adapter boundary. Run them with `pnpm --filter psi-swarm test` or run the gated
   coverage pass with `pnpm --filter psi-swarm test:coverage`.
-- The `web` package has no test script; its build is `astro build`.
+- The `web` package tests comparison compatibility and coverage rendering with
+  `pnpm --filter psi-swarm-web test`, reusing the existing CLI TypeScript loader.
+  Both `pnpm quality` and CI run these checks. Its build is `astro build`.
 - `.github/workflows/psi-swarm-ci.yml` runs the complete quality gate for
   helper pull requests and pushes to `main`. See
   [operations → deploy](../operations/deploy.md).
@@ -39,8 +41,8 @@ description: The current test and quality checks.
 ## Remaining gap
 
 Coverage currently measures only CLI modules exercised by the suite, not the
-entire CLI or the web application. The checked floor is 67% lines, 78%
-branches, and 45% functions. Core math (percentile interpolation in
+entire CLI or the web application. The checked floor is 75% lines, 79%
+branches, and 66% functions. Core math (percentile interpolation in
 `cli/src/stats.ts`, preset resolution in `cli/src/presets.ts`) and browser
 behavior remain the highest-value additions.
 

@@ -1,4 +1,5 @@
 import type { HistoryDB, RunRow } from './db.js';
+import { measurementCompatibility, type MeasurementCompatibility } from './measurement-series.js';
 
 type WatchStatus = 'regressed' | 'improved' | 'stable' | 'stale' | 'missing';
 
@@ -18,6 +19,7 @@ export interface WatchlistQueueItem {
     deltaPct?: number;
   }[];
   message: string;
+  comparability?: MeasurementCompatibility;
 }
 
 const DEFAULT_LCP_REGRESSION_MS = 200;
@@ -155,6 +157,45 @@ export function evaluateWatchlist(db: HistoryDB, refreshedAt = Date.now()): Watc
     }
 
     const baseline = baselineRuns(db, entry.url, preset, entry.baseline_tag ?? undefined);
+    const latestSuccessful = latest.filter((run) => !run.error);
+    const comparability = measurementCompatibility(
+      baseline.filter((run) => !run.error).map((run) => run.lighthouse_version),
+      latestSuccessful.map((run) => run.lighthouse_version)
+    );
+    if (!comparability.comparable) {
+      const firstBatch =
+        !entry.baseline_tag && baseline.length === 0 && latestSuccessful.length > 0;
+      if (latestSuccessful.length === 0) {
+        comparability.message =
+          'Latest batch has no successful runs; collect a successful batch before comparing';
+      } else if (!entry.baseline_tag) {
+        comparability.message = firstBatch
+          ? 'First batch; collect another successful batch on the same Lighthouse engine before comparing'
+          : `No comparable automatic baseline (${comparability.reason}); collect another successful batch on the current Lighthouse engine`;
+      }
+      if (entry.baseline_tag && latestSuccessful.length > 0) {
+        comparability.message += '; update this watchlist baseline tag to the new baseline series';
+      }
+      const current = firstBatch ? p75(latestSuccessful) : undefined;
+      queue.push({
+        url: entry.url,
+        label: entry.label ?? undefined,
+        preset,
+        status: firstBatch ? 'stable' : 'missing',
+        baselineTag: entry.baseline_tag ?? undefined,
+        latestRunAt: latest[0]?.started_at,
+        baselineRunAt: baseline[0]?.started_at,
+        metrics: current
+          ? [
+              { metric: 'lcp', latest: current.lcp },
+              { metric: 'performance_score', latest: current.score },
+            ]
+          : [],
+        comparability,
+        message: comparability.message,
+      });
+      continue;
+    }
     const latestStats = p75(latest);
     const baselineStats = p75(baseline);
 
@@ -187,6 +228,7 @@ export function evaluateWatchlist(db: HistoryDB, refreshedAt = Date.now()): Watc
       label: entry.label ?? undefined,
       preset,
       status,
+      comparability,
       baselineTag: entry.baseline_tag ?? undefined,
       latestRunAt: latestAt,
       baselineRunAt: baseline[0]?.started_at,

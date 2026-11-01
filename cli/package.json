@@ -34,7 +34,7 @@
     "cli-table3": "^0.6.5",
     "commander": "^12.1.0",
     "ink": "^7.0.5",
-    "lighthouse": "13.4.1",
+    "lighthouse": "13.6.0",
     "ora": "^8.1.1",
     "react": "^19.2.7"
   },

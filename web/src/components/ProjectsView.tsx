@@ -12,6 +12,12 @@ interface PageRow {
   reportCount?: number;
   latestReportAt?: number;
 }
+interface HeadlineCoverage {
+  lighthouseVersion: string | null;
+  includedPages: number;
+  excludedPages: number;
+  missingPages: number;
+}
 interface ProjectGrouped {
   origin: string;
   totalRuns: number;
@@ -20,6 +26,7 @@ interface ProjectGrouped {
   worstMobileLcp?: number;
   worstDesktopLcp?: number;
   worstCls?: number;
+  measurementCoverage?: Record<'mobile' | 'desktop' | 'cls', HeadlineCoverage>;
   isCloudflarePlatform?: boolean;
   domainRating?: number;
   domainRatingDomain?: string;
@@ -455,6 +462,7 @@ function ProjectCard({ proj, client, expanded, onToggle, pages }: ProjectCardPro
           Run all pages
         </button>
       </div>
+      {proj.measurementCoverage && <MeasurementCoverage coverage={proj.measurementCoverage} />}
       {expanded && (
         <div className="border-t border-[var(--color-border)] bg-[var(--color-bg)]">
           {proj.pages.map((pg) => (
@@ -699,6 +707,24 @@ function HistoryDetail({ rows }: { rows: HistoryRow[] }) {
           Showing 30 of {sorted.length} runs.
         </div>
       )}
+    </div>
+  );
+}
+
+export function MeasurementCoverage({
+  coverage,
+}: {
+  coverage: Record<'mobile' | 'desktop' | 'cls', HeadlineCoverage>;
+}) {
+  return (
+    <div className="px-5 pb-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-[var(--color-dim)]">
+      {Object.entries(coverage).map(([device, value]) => (
+        <span key={device}>
+          {{ mobile: 'Mobile LCP', desktop: 'Desktop LCP', cls: 'CLS' }[device]}: Lighthouse{' '}
+          {value.lighthouseVersion ?? 'unknown'} · {value.includedPages} pages included ·{' '}
+          {value.excludedPages} excluded · {value.missingPages} unmeasured
+        </span>
+      ))}
     </div>
   );
 }
