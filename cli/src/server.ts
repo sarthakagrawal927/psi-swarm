@@ -1,11 +1,13 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { URL as NodeURL } from 'node:url';
+import type { AddressInfo } from 'node:net';
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { SwarmRunner, type RunResultWithArtifact, type RunnerEvent } from './runner.js';
 import { HistoryDB } from './db.js';
+import { measurementCompatibility } from './measurement-series.js';
 import { PRESETS, PRESET_GROUPS, resolvePresets } from './presets.js';
 import { profileMachine, resolveParallelism } from './machine.js';
 import { discover, rank, type DiscoveredLink } from './discover.js';
@@ -171,7 +173,7 @@ function newRunId(): string {
   return randomBytes(6).toString('hex');
 }
 
-function startRun(record: RunRecord): void {
+function startRun(record: RunRecord, historyPath?: string): void {
   const presets = resolvePresets(record.presetNames.join(','));
   const runner = new SwarmRunner();
   record.runner = runner;
@@ -205,7 +207,7 @@ function startRun(record: RunRecord): void {
       record.finishedAt = Date.now();
       // Persist to SQLite history.
       try {
-        const db = new HistoryDB();
+        const db = new HistoryDB(historyPath);
         for (const r of results) {
           db.insert({
             url: record.url,
@@ -215,6 +217,7 @@ function startRun(record: RunRecord): void {
             metrics: r.metrics,
             error: r.error,
             tag: record.tag,
+            lighthouseVersion: r.provenance?.lighthouseVersion,
           });
         }
         const artifactPaths = exportSwarmArtifacts(record.url, results, { tag: record.tag });
@@ -305,11 +308,13 @@ export interface ServeOptions {
   host: string;
   origin: string;
   token?: string;
+  historyPath?: string;
 }
 
 export function createAgentServer(opts: ServeOptions): {
   listen: () => Promise<void>;
   close: () => Promise<void>;
+  address: () => AddressInfo | string | null;
 } {
   const checkAuth = (req: IncomingMessage, url: NodeURL): boolean => {
     if (!opts.token) return true;
@@ -328,6 +333,7 @@ export function createAgentServer(opts: ServeOptions): {
   };
 
   const domainRatingScheduler = createDomainRatingScheduler({
+    openHistory: () => new HistoryDB(opts.historyPath),
     isIdle,
     onRefresh: ({ domains, refreshedAt }) => {
       console.log(
@@ -405,7 +411,7 @@ export function createAgentServer(opts: ServeOptions): {
           subscribers: new Set(),
         };
         runs.set(id, record);
-        startRun(record);
+        startRun(record, opts.historyPath);
         return send(res, 202, { runId: id }, opts.origin);
       }
 
@@ -487,7 +493,7 @@ export function createAgentServer(opts: ServeOptions): {
 
       // GET /api/urls
       if (req.method === 'GET' && url.pathname === '/api/urls') {
-        const db = new HistoryDB();
+        const db = new HistoryDB(opts.historyPath);
         const out = db.urls();
         db.close();
         return send(res, 200, { urls: out }, opts.origin);
@@ -496,7 +502,7 @@ export function createAgentServer(opts: ServeOptions): {
       // GET /api/projects — fleet dashboard view, grouped by origin
       if (req.method === 'GET' && url.pathname === '/api/projects') {
         const windowDays = parseInt(url.searchParams.get('windowDays') ?? '30', 10);
-        const db = new HistoryDB();
+        const db = new HistoryDB(opts.historyPath);
         try {
           const rows = db.projects(windowDays);
           // Group URL-level rows by URL origin so multiple pages of the same site
@@ -620,7 +626,7 @@ export function createAgentServer(opts: ServeOptions): {
         const u = url.searchParams.get('url');
         if (!u) return send(res, 400, { error: 'url query param required' }, opts.origin);
         const limit = parseInt(url.searchParams.get('limit') ?? '60', 10);
-        const db = new HistoryDB();
+        const db = new HistoryDB(opts.historyPath);
         const rows = db.history(u, limit);
         db.close();
         return send(res, 200, { url: u, rows }, opts.origin);
@@ -632,7 +638,7 @@ export function createAgentServer(opts: ServeOptions): {
         if (!u) return send(res, 400, { error: 'url query param required' }, opts.origin);
         const preset = url.searchParams.get('preset') ?? undefined;
         const limit = parseInt(url.searchParams.get('limit') ?? '500', 10);
-        const db = new HistoryDB();
+        const db = new HistoryDB(opts.historyPath);
         const rows = db.recentRuns(u, preset, limit);
         db.close();
         return send(res, 200, { rows }, opts.origin);
@@ -642,7 +648,7 @@ export function createAgentServer(opts: ServeOptions): {
       if (req.method === 'GET' && url.pathname === '/api/tags') {
         const u = url.searchParams.get('url');
         if (!u) return send(res, 400, { error: 'url query param required' }, opts.origin);
-        const db = new HistoryDB();
+        const db = new HistoryDB(opts.historyPath);
         const tags = db.tagsForUrl(u);
         db.close();
         return send(res, 200, { url: u, tags }, opts.origin);
@@ -665,10 +671,14 @@ export function createAgentServer(opts: ServeOptions): {
         if (!['p50', 'p75', 'p90', 'p99'].includes(pctKey)) {
           return send(res, 400, { error: 'pct must be one of p50|p75|p90|p99' }, opts.origin);
         }
-        const db = new HistoryDB();
+        const db = new HistoryDB(opts.historyPath);
         try {
           const baseRows = db.runsByTag(u, baselineTag);
           const candRows = db.runsByTag(u, candidateTag);
+          const comparability = measurementCompatibility(
+            baseRows.filter((run) => !run.error).map((run) => run.lighthouse_version),
+            candRows.filter((run) => !run.error).map((run) => run.lighthouse_version)
+          );
           const metricKeys = [
             'lcp',
             'cls',
@@ -679,7 +689,7 @@ export function createAgentServer(opts: ServeOptions): {
             'si',
             'performance_score',
           ] as const;
-          const metrics = metricKeys.map((key) => {
+          const metrics = (comparability.comparable ? metricKeys : []).map((key) => {
             const baseVals = baseRows
               .filter((r) => !r.error)
               .map((r) => r[key])
@@ -702,6 +712,7 @@ export function createAgentServer(opts: ServeOptions): {
               pct: pctKey,
               baselineCount: baseRows.filter((r) => !r.error).length,
               candidateCount: candRows.filter((r) => !r.error).length,
+              comparability,
               metrics,
             },
             opts.origin
@@ -852,7 +863,7 @@ export function createAgentServer(opts: ServeOptions): {
 
       // GET /api/watchlist
       if (req.method === 'GET' && url.pathname === '/api/watchlist') {
-        const db = new HistoryDB();
+        const db = new HistoryDB(opts.historyPath);
         try {
           const entries = db.listWatchlist();
           const queue = evaluateWatchlist(db);
@@ -885,7 +896,7 @@ export function createAgentServer(opts: ServeOptions): {
           staleDays?: number;
         }>(req);
         if (!body.url) return send(res, 400, { error: 'url required' }, opts.origin);
-        const db = new HistoryDB();
+        const db = new HistoryDB(opts.historyPath);
         db.addWatchlist(body);
         const queue = evaluateWatchlist(db);
         db.close();
@@ -896,7 +907,7 @@ export function createAgentServer(opts: ServeOptions): {
       if (req.method === 'DELETE' && url.pathname === '/api/watchlist') {
         const target = url.searchParams.get('url');
         if (!target) return send(res, 400, { error: 'url required' }, opts.origin);
-        const db = new HistoryDB();
+        const db = new HistoryDB(opts.historyPath);
         const removed = db.removeWatchlist(target);
         const queue = evaluateWatchlist(db);
         db.close();
@@ -910,7 +921,7 @@ export function createAgentServer(opts: ServeOptions): {
 
       // POST /api/watchlist/refresh
       if (req.method === 'POST' && url.pathname === '/api/watchlist/refresh') {
-        const db = new HistoryDB();
+        const db = new HistoryDB(opts.historyPath);
         const refreshedAt = Date.now();
         db.setMeta('watchlist_refreshed_at', String(refreshedAt));
         const queue = evaluateWatchlist(db, refreshedAt);
@@ -927,7 +938,7 @@ export function createAgentServer(opts: ServeOptions): {
       if (req.method === 'GET' && url.pathname === '/api/insights') {
         const target = url.searchParams.get('url');
         if (!target) return send(res, 400, { error: 'url required' }, opts.origin);
-        const db = new HistoryDB();
+        const db = new HistoryDB(opts.historyPath);
         const rows = db.runInsightsForUrl(target);
         db.close();
         return send(
@@ -959,6 +970,7 @@ export function createAgentServer(opts: ServeOptions): {
   });
 
   return {
+    address: () => server.address(),
     listen: () =>
       new Promise<void>((resolve, reject) => {
         server.once('error', reject);

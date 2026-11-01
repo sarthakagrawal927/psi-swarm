@@ -6,6 +6,7 @@ import type { RunResultWithArtifact } from './runner.js';
 import { diagnosePreset, rankOpportunities, formatAggregatedAudit } from './diagnose.js';
 import { computeStats } from './stats.js';
 import type { HistoryDB, RunRow } from './db.js';
+import { measurementCompatibility, type MeasurementCompatibility } from './measurement-series.js';
 
 export interface TraceInsightRecord {
   runId: number;
@@ -15,6 +16,7 @@ export interface TraceInsightRecord {
   summary: string;
   opportunities: string[];
   comparisonNotes?: string;
+  comparability?: MeasurementCompatibility;
   adapter: string;
   artifactPath?: string;
   createdAt: number;
@@ -58,6 +60,11 @@ function buildComparisonNotes(
   baselineResults?: RunResultWithArtifact[]
 ): string | undefined {
   if (!baselineResults || baselineResults.length === 0) return undefined;
+  const comparability = measurementCompatibility(
+    baselineResults.filter((run) => !run.error).map((run) => run.provenance?.lighthouseVersion),
+    results.filter((run) => !run.error).map((run) => run.provenance?.lighthouseVersion)
+  );
+  if (!comparability.comparable) return `Not comparable: ${comparability.message}`;
   const curP75 = lcpP75(results);
   const baseP75 = lcpP75(baselineResults);
   if (curP75 === undefined || baseP75 === undefined) return undefined;
@@ -173,6 +180,13 @@ function rowToRunResult(row: RunRow): RunResultWithArtifact {
     startedAt: row.started_at,
     finishedAt: row.finished_at ?? row.started_at,
     metrics: metricsFromRow(row),
+    provenance: {
+      schemaVersion: 1,
+      lighthouseVersion: row.lighthouse_version ?? undefined,
+      screenEmulation: {},
+      throttling: {},
+      observed: {},
+    },
   };
 }
 
@@ -184,6 +198,7 @@ function loadBaselineByPreset(
   const baselineByPreset = new Map<string, RunResultWithArtifact[]>();
   if (!baselineTag) return baselineByPreset;
   for (const row of db.runsByTag(url, baselineTag)) {
+    if (row.error) continue;
     const arr = baselineByPreset.get(row.preset) ?? [];
     arr.push(rowToRunResult(row));
     baselineByPreset.set(row.preset, arr);
@@ -211,13 +226,24 @@ export async function deriveTraceInsights(
     const runIds = db.recentRunIds(url, preset, 1);
     const runId = runIds[0];
     if (!runId) continue;
+    const baselineResults = baselineByPreset.get(preset);
+    const comparability = opts.baselineTag
+      ? measurementCompatibility(
+          (baselineResults ?? []).map((run) => run.provenance?.lighthouseVersion),
+          rs.map((run) => run.provenance?.lighthouseVersion)
+        )
+      : undefined;
     const insight = await adapter.diagnose({
       url,
       preset,
       results: rs,
       artifactPath: opts.artifactPaths?.get(preset),
-      baselineResults: baselineByPreset.get(preset),
+      baselineResults: comparability?.comparable ? baselineResults : undefined,
     });
+    if (comparability && !comparability.comparable) {
+      insight.comparisonNotes = `Not comparable: ${comparability.message}`;
+    }
+    insight.comparability = comparability;
     db.upsertRunInsight({
       runId,
       bottleneckPhase: insight.bottleneckPhase,
@@ -235,6 +261,7 @@ export async function deriveTraceInsights(
       summary: insight.summary,
       opportunities: insight.opportunities,
       comparisonNotes: insight.comparisonNotes,
+      comparability,
       adapter: insight.adapter,
       artifactPath: insight.artifactPath,
       createdAt: Date.now(),

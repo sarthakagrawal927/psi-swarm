@@ -32,11 +32,19 @@ function result(lcp: number, audits: object[] = []): RunResultWithArtifact {
       performance_score: 85,
     },
     audits,
+    provenance: {
+      schemaVersion: 1,
+      lighthouseVersion: '13.6.0',
+      screenEmulation: {},
+      throttling: {},
+      observed: {},
+    },
   };
 }
 
 function insertRun(db: HistoryDB, url: string, lcp: number, tag?: string, offsetMs = 0) {
   db.insert({
+    lighthouseVersion: '13.6.0',
     url,
     preset: preset.name,
     started_at: Date.now() + offsetMs,
@@ -159,6 +167,7 @@ test('builtin trace-insight adapter', async (t) => {
   await t.test('omits comparison notes when baseline has no LCP data', async () => {
     const url = 'https://no-lcp.example.com';
     db.insert({
+      lighthouseVersion: '13.6.0',
       url,
       preset: preset.name,
       started_at: Date.now() - 100_000,

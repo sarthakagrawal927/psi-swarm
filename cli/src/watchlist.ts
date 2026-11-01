@@ -1,4 +1,5 @@
 import type { HistoryDB, RunRow } from './db.js';
+import { measurementCompatibility, type MeasurementCompatibility } from './measurement-series.js';
 
 type WatchStatus = 'regressed' | 'improved' | 'stable' | 'stale' | 'missing';
 
@@ -18,6 +19,7 @@ export interface WatchlistQueueItem {
     deltaPct?: number;
   }[];
   message: string;
+  comparability?: MeasurementCompatibility;
 }
 
 const DEFAULT_LCP_REGRESSION_MS = 200;
@@ -155,6 +157,25 @@ export function evaluateWatchlist(db: HistoryDB, refreshedAt = Date.now()): Watc
     }
 
     const baseline = baselineRuns(db, entry.url, preset, entry.baseline_tag ?? undefined);
+    const comparability = measurementCompatibility(
+      baseline.filter((run) => !run.error).map((run) => run.lighthouse_version),
+      latest.filter((run) => !run.error).map((run) => run.lighthouse_version)
+    );
+    if (!comparability.comparable) {
+      queue.push({
+        url: entry.url,
+        label: entry.label ?? undefined,
+        preset,
+        status: 'missing',
+        baselineTag: entry.baseline_tag ?? undefined,
+        latestRunAt: latest[0]?.started_at,
+        baselineRunAt: baseline[0]?.started_at,
+        metrics: [],
+        comparability,
+        message: comparability.message,
+      });
+      continue;
+    }
     const latestStats = p75(latest);
     const baselineStats = p75(baseline);
 
@@ -187,6 +208,7 @@ export function evaluateWatchlist(db: HistoryDB, refreshedAt = Date.now()): Watc
       label: entry.label ?? undefined,
       preset,
       status,
+      comparability,
       baselineTag: entry.baseline_tag ?? undefined,
       latestRunAt: latestAt,
       baselineRunAt: baseline[0]?.started_at,

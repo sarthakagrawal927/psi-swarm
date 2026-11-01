@@ -1,0 +1,44 @@
+export interface MeasurementCompatibility {
+  comparable: boolean;
+  reason:
+    | 'same-version'
+    | 'missing-runs'
+    | 'unknown-version'
+    | 'mixed-versions'
+    | 'different-versions';
+  baselineVersions: Array<string | null>;
+  candidateVersions: Array<string | null>;
+  message: string;
+}
+
+export function measurementCompatibility(
+  baseline: ReadonlyArray<string | null | undefined>,
+  candidate: ReadonlyArray<string | null | undefined>
+): MeasurementCompatibility {
+  const versions = (values: ReadonlyArray<string | null | undefined>) =>
+    [...new Set(values.map((value) => value?.trim() || null))].sort();
+  const baselineVersions = versions(baseline);
+  const candidateVersions = versions(candidate);
+  let reason: MeasurementCompatibility['reason'] = 'same-version';
+  let message = 'Same Lighthouse version';
+  if (baseline.length === 0 || candidate.length === 0) {
+    reason = 'missing-runs';
+    message = 'A run series has no successful measurements';
+  } else if (baselineVersions.includes(null) || candidateVersions.includes(null)) {
+    reason = 'unknown-version';
+    message = 'Lighthouse version is unknown; collect a versioned baseline before comparing';
+  } else if (baselineVersions.length !== 1 || candidateVersions.length !== 1) {
+    reason = 'mixed-versions';
+    message = 'A run series mixes Lighthouse versions; use one engine version per tag';
+  } else if (baselineVersions[0] !== candidateVersions[0]) {
+    reason = 'different-versions';
+    message = 'Lighthouse versions differ; engine changes are not product performance changes';
+  }
+  return {
+    comparable: reason === 'same-version',
+    reason,
+    baselineVersions,
+    candidateVersions,
+    message,
+  };
+}

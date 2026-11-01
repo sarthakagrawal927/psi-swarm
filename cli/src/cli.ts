@@ -27,6 +27,7 @@ import {
   type ScriptArtifact,
 } from './runner.js';
 import { HistoryDB, type RunRow } from './db.js';
+import { measurementCompatibility } from './measurement-series.js';
 import { renderSwarmReport } from './report.js';
 import { discover, rank, type DiscoveredLink } from './discover.js';
 import { profileMachine, resolveParallelism } from './machine.js';
@@ -220,6 +221,7 @@ async function saveAndDeriveInsights(
         metrics: r.metrics,
         error: r.error,
         tag: opts.tag as string | undefined,
+        lighthouseVersion: r.provenance?.lighthouseVersion,
       });
     }
     const artifactPaths = exportSwarmArtifacts(url, results, {
@@ -573,8 +575,8 @@ program
   .option('--pct <pct>', 'Percentile to compare (p50|p75|p90|p99)', 'p75')
   .action((url: string, opts) => {
     const db = new HistoryDB();
-    const base = db.runsByTag(url, opts.baseline);
-    const cand = db.runsByTag(url, opts.candidate);
+    const base = db.runsByTag(url, opts.baseline).filter((run) => !run.error);
+    const cand = db.runsByTag(url, opts.candidate).filter((run) => !run.error);
     db.close();
     if (base.length === 0 || cand.length === 0) {
       console.log(
@@ -583,6 +585,16 @@ program
         )
       );
       process.exit(1);
+    }
+    const comparability = measurementCompatibility(
+      base.filter((run) => !run.error).map((run) => run.lighthouse_version),
+      cand.filter((run) => !run.error).map((run) => run.lighthouse_version)
+    );
+    if (!comparability.comparable) {
+      console.error(`Not comparable: ${comparability.message}`);
+      console.error(JSON.stringify(comparability));
+      process.exitCode = 1;
+      return;
     }
     const pctKey = String(opts.pct).toLowerCase();
     if (!['p50', 'p75', 'p90', 'p99'].includes(pctKey)) {
@@ -661,7 +673,7 @@ program
       boxen(
         `Comparison for ${chalk.bold(url)}\n` +
           `baseline=${opts.baseline} (n=${base.length})  vs  candidate=${opts.candidate} (n=${cand.length})\n` +
-          `percentile = ${pctKey}`,
+          `percentile = ${pctKey} · Lighthouse ${comparability.candidateVersions[0]}`,
         { padding: 1, borderColor: 'cyan', borderStyle: 'round' }
       )
     );

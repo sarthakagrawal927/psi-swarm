@@ -9,6 +9,7 @@ const META_LAST_REFRESH = 'ahrefs_last_refresh_at';
 
 export interface DomainRatingSchedulerDeps {
   isIdle: () => boolean;
+  openHistory?: () => HistoryDB;
   onRefresh?: (info: { domains: number; refreshedAt: number }) => void;
   onError?: (err: Error) => void;
 }
@@ -25,7 +26,7 @@ export function createDomainRatingScheduler(deps: DomainRatingSchedulerDeps): {
   async function refreshNow(): Promise<boolean> {
     if (refreshInProgress || !deps.isIdle()) return false;
 
-    const db = new HistoryDB();
+    const db = deps.openHistory?.() ?? new HistoryDB();
     try {
       const origins = db.trackedOrigins();
       const eligible = [
@@ -62,7 +63,7 @@ export function createDomainRatingScheduler(deps: DomainRatingSchedulerDeps): {
   async function maybeRefresh(): Promise<void> {
     if (refreshInProgress || !deps.isIdle()) return;
 
-    const db = new HistoryDB();
+    const db = deps.openHistory?.() ?? new HistoryDB();
     let due = false;
     try {
       const lastRefresh = Number(db.getMeta(META_LAST_REFRESH) ?? '0');

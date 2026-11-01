@@ -22,6 +22,7 @@ export interface RunRow {
   performance_score: number | null;
   error: string | null;
   tag: string | null;
+  lighthouse_version: string | null;
 }
 
 export interface NewRun {
@@ -41,6 +42,7 @@ export interface NewRun {
   };
   error?: string;
   tag?: string;
+  lighthouseVersion?: string;
 }
 
 export interface RunInsightRow {
@@ -91,6 +93,8 @@ export interface ProjectSummary {
   desktopLcpP75?: number;
   mobilePerfScoreP50?: number;
   desktopPerfScoreP50?: number;
+  mobileLighthouseVersion?: string | null;
+  desktopLighthouseVersion?: string | null;
   cls?: number;
 }
 
@@ -104,6 +108,7 @@ export interface HistoryRow {
   ttfb: number | null;
   performance_score: number | null;
   tag: string | null;
+  lighthouse_version: string | null;
 }
 
 const RUN_METRIC_KEYS = [
@@ -126,6 +131,7 @@ function buildRunRowParams(r: NewRun): Record<string, string | number | null> {
     finished_at: r.finished_at,
     error: r.error ?? null,
     tag: r.tag ?? null,
+    lighthouse_version: r.lighthouseVersion?.trim() || null,
   };
   for (const key of RUN_METRIC_KEYS) {
     row[key] = m[key] ?? null;
@@ -160,7 +166,8 @@ export class HistoryDB {
         si REAL,
         performance_score REAL,
         error TEXT,
-        tag TEXT
+        tag TEXT,
+        lighthouse_version TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_runs_url_preset ON runs(url, preset);
       CREATE INDEX IF NOT EXISTS idx_runs_started_at ON runs(started_at);
@@ -203,6 +210,20 @@ export class HistoryDB {
       CREATE INDEX IF NOT EXISTS idx_watchlist_added_at ON watchlist(added_at);
     `);
     this.migrateDomainRatingsNullable();
+    this.migrateRunLighthouseVersion();
+  }
+
+  private migrateRunLighthouseVersion() {
+    const hasColumn = () =>
+      (this.db.pragma('table_info(runs)') as Array<{ name: string }>).some(
+        (column) => column.name === 'lighthouse_version'
+      );
+    if (hasColumn()) return;
+    this.db
+      .transaction(() => {
+        if (!hasColumn()) this.db.exec('ALTER TABLE runs ADD COLUMN lighthouse_version TEXT');
+      })
+      .immediate();
   }
 
   /**
@@ -301,11 +322,11 @@ export class HistoryDB {
       INSERT INTO runs (
         url, preset, started_at, finished_at,
         lcp, cls, inp, tbt, fcp, ttfb, si, performance_score,
-        error, tag
+        error, tag, lighthouse_version
       ) VALUES (
         @url, @preset, @started_at, @finished_at,
         @lcp, @cls, @inp, @tbt, @fcp, @ttfb, @si, @performance_score,
-        @error, @tag
+        @error, @tag, @lighthouse_version
       )
     `);
     const result = stmt.run(buildRunRowParams(r));
@@ -368,7 +389,7 @@ export class HistoryDB {
       .all() as UrlSummary[];
 
     const stmt = this.db.prepare(
-      `SELECT lcp, cls, performance_score, tag, started_at FROM runs
+      `SELECT lcp, cls, performance_score, tag, started_at, lighthouse_version FROM runs
        WHERE url = ? AND preset = ? AND started_at >= ? AND error IS NULL
        ORDER BY started_at DESC LIMIT 200`
     );
@@ -392,6 +413,7 @@ export class HistoryDB {
       performance_score: number | null;
       tag: string | null;
       started_at: number;
+      lighthouse_version: string | null;
     }
 
     // Group rows by batch tag (null tag = each run is its own batch), compute
@@ -404,7 +426,7 @@ export class HistoryDB {
       if (rows.length === 0) return undefined;
       const batches = new Map<string, BatchRow[]>();
       for (const r of rows) {
-        const key = r.tag ?? `__untagged_${r.started_at}`;
+        const key = JSON.stringify([r.tag ?? `__untagged_${r.started_at}`, r.lighthouse_version]);
         const arr = batches.get(key) ?? [];
         arr.push(r);
         batches.set(key, arr);
@@ -438,6 +460,8 @@ export class HistoryDB {
         desktopLcpP75: latestBatchPercentile(desktop, 'lcp', 75),
         mobilePerfScoreP50: latestBatchPercentile(mobile, 'performance_score', 50),
         desktopPerfScoreP50: latestBatchPercentile(desktop, 'performance_score', 50),
+        mobileLighthouseVersion: mobile[0]?.lighthouse_version,
+        desktopLighthouseVersion: desktop[0]?.lighthouse_version,
         cls: latestBatchPercentile([...mobile, ...desktop], 'cls', 75),
       };
     });
@@ -559,7 +583,7 @@ export class HistoryDB {
   history(url: string, limit = 60): HistoryRow[] {
     return this.db
       .prepare(
-        `SELECT started_at, preset, lcp, cls, tbt, fcp, ttfb, performance_score, tag
+        `SELECT started_at, preset, lcp, cls, tbt, fcp, ttfb, performance_score, tag, lighthouse_version
          FROM runs WHERE url = ? AND error IS NULL ORDER BY started_at DESC LIMIT ?`
       )
       .all(url, limit) as HistoryRow[];

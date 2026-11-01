@@ -5,8 +5,6 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@opentelemetry/core': 2.8.0
-  '@paulirish/trace_engine@0.0.67>third-party-web': 0.29.2
   brace-expansion: 2.1.6
   devalue@>=5.0.0 <6.0.0: 5.9.3
   fast-uri: 3.1.5
