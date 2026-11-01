@@ -585,6 +585,9 @@ program
     );
     if (!comparability.comparable) {
       console.error(`Not comparable: ${comparability.message}`);
+      console.error(
+        `baseline=${opts.baseline} (n=${base.length}) candidate=${opts.candidate} (n=${cand.length})`
+      );
       console.error(JSON.stringify(comparability));
       process.exitCode = 1;
       return;

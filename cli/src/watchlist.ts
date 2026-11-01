@@ -157,18 +157,23 @@ export function evaluateWatchlist(db: HistoryDB, refreshedAt = Date.now()): Watc
     }
 
     const baseline = baselineRuns(db, entry.url, preset, entry.baseline_tag ?? undefined);
+    const latestSuccessful = latest.filter((run) => !run.error);
     const comparability = measurementCompatibility(
       baseline.filter((run) => !run.error).map((run) => run.lighthouse_version),
-      latest.filter((run) => !run.error).map((run) => run.lighthouse_version)
+      latestSuccessful.map((run) => run.lighthouse_version)
     );
     if (!comparability.comparable) {
-      const firstBatch = !entry.baseline_tag && baseline.length === 0;
-      if (!entry.baseline_tag) {
+      const firstBatch =
+        !entry.baseline_tag && baseline.length === 0 && latestSuccessful.length > 0;
+      if (latestSuccessful.length === 0) {
+        comparability.message =
+          'Latest batch has no successful runs; collect a successful batch before comparing';
+      } else if (!entry.baseline_tag) {
         comparability.message = firstBatch
           ? 'First batch; collect another successful batch on the same Lighthouse engine before comparing'
           : `No comparable automatic baseline (${comparability.reason}); collect another successful batch on the current Lighthouse engine`;
       }
-      const current = firstBatch ? p75(latest.filter((run) => !run.error)) : undefined;
+      const current = firstBatch ? p75(latestSuccessful) : undefined;
       queue.push({
         url: entry.url,
         label: entry.label ?? undefined,

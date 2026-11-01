@@ -183,6 +183,41 @@ test('untagged watchlists preserve first-batch readings and give automatic basel
   assert.equal(evaluateWatchlist(db, now + 102)[0].comparability?.comparable, true);
 });
 
+test('failed automatic watchlist batches never become stable first readings', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'psi-engine-failed-watchlist-'));
+  const db = new HistoryDB(join(dir, 'history.db'));
+  t.after(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const now = Date.now();
+  for (const withPriorSuccess of [false, true]) {
+    const url = `https://failed-${withPriorSuccess}.example.com/`;
+    db.addWatchlist({ url });
+    if (withPriorSuccess)
+      db.insert({
+        url,
+        preset: 'mobile-mid',
+        started_at: now - 1000,
+        finished_at: now - 999,
+        metrics: { lcp: 1500 },
+        lighthouseVersion: '13.6.0',
+      });
+    db.insert({
+      url,
+      preset: 'mobile-mid',
+      started_at: now,
+      finished_at: now + 1,
+      error: 'fixture navigation failure',
+    });
+    const item = evaluateWatchlist(db, now + 2).find((row) => row.url === url)!;
+    assert.equal(item.status, 'missing');
+    assert.equal(item.comparability?.comparable, false);
+    assert.deepEqual(item.metrics, []);
+    assert.match(item.message, /Latest batch has no successful runs/);
+  }
+});
+
 test('project aggregation separates reused tags by engine version', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'psi-engine-projects-'));
   const db = new HistoryDB(join(dir, 'history.db'));

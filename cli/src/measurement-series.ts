@@ -25,16 +25,15 @@ export function measurementCompatibility(
     reason = 'missing-runs';
     message =
       baseline.length === 0
-        ? 'No successful baseline series; collect one under a new tag and update the watchlist baseline tag'
+        ? 'No successful baseline series; collect one under a new tag before comparing'
         : 'No successful candidate series; collect it under a new tag before comparing';
   } else if (baselineVersions.length !== 1 || candidateVersions.length !== 1) {
     reason = 'mixed-versions';
     message =
-      'A run series mixes Lighthouse versions; collect under new tags and update the watchlist baseline tag';
+      'A run series mixes Lighthouse versions; collect both series under new tags before comparing';
   } else if (baselineVersions.includes(null) || candidateVersions.includes(null)) {
     reason = 'unknown-version';
-    message =
-      'Lighthouse version is unknown; collect under new tags and update the watchlist baseline tag';
+    message = 'Lighthouse version is unknown; collect both series under new tags before comparing';
   } else if (baselineVersions[0] !== candidateVersions[0]) {
     reason = 'different-versions';
     message = 'Lighthouse versions differ; engine changes are not product performance changes';

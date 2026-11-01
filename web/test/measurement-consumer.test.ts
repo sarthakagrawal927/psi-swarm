@@ -53,7 +53,7 @@ const noncomparableFixture: CompareResponse = {
   comparability: {
     comparable: false,
     message:
-      'A run series mixes Lighthouse versions; collect under new tags and update the watchlist baseline tag',
+      'A run series mixes Lighthouse versions; collect both series under new tags before comparing',
     baselineVersions: [null, '13.4.1'],
     candidateVersions: ['13.6.0'],
   },
@@ -64,7 +64,7 @@ test('comparison consumer explains incompatible series and preserves same-engine
     renderToStaticMarkup(createElement(CompareResult, { result, pct: 'p75' }));
   const incompatible = render(noncomparableFixture);
   assert.match(incompatible, /Measurements are not comparable/);
-  assert.match(incompatible, /collect under new tags/);
+  assert.match(incompatible, /collect both series under new tags/);
   assert.match(incompatible, /unknown, 13.4.1/);
   assert.match(incompatible, /13.6.0/);
   assert.match(incompatible, /readings remain available in history/);
